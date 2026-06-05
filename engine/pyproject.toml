@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cadence-engine"
+version = "1.0.0"
+description = "Cadence — AI short-form video automation engine. Analyzes a reference video's aesthetic and pacing, cleans raw A-roll (silence / filler / bad-take removal), and synthesizes a premium 1080x1920 vertical video that matches the reference."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Cadence Studio" }]
+
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=10.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# Heavy, optional, on-device ML upgrades. The engine runs and is fully testable
+# WITHOUT these — they upgrade transcription quality and retake-detection from
+# the built-in lexical/ffmpeg backends to semantic/word-level accuracy.
+ml = [
+    "faster-whisper>=1.0",
+    "sentence-transformers>=2.6",
+]
+ocr = [
+    "pytesseract>=0.3.10",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.2",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+cadence = "cadence.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cadence*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --timeout=300"
+markers = [
+    "integration: tests that shell out to a real ffmpeg binary",
+    "ml: tests that require the optional ML extras (faster-whisper / sentence-transformers)",
+    "slow: long-running render tests",
+]

@@ -1,0 +1,122 @@
+
+> web@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.7 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.21.16.1:3000
+- Environments: .env.local
+✓ Ready in 1027ms
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\Cory\package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * C:\Users\Cory\Downloads\Video Analyzer\web\package-lock.json
+
+
+○ Compiling / ...
+ GET / 200 in 5.0s (next.js: 4.1s, proxy.ts: 435ms, application-code: 454ms)
+ GET /login 200 in 1145ms (next.js: 892ms, proxy.ts: 12ms, application-code: 241ms)
+ GET /signup 200 in 664ms (next.js: 543ms, proxy.ts: 11ms, application-code: 111ms)
+ GET /dashboard 200 in 1634ms (next.js: 1154ms, proxy.ts: 137ms, application-code: 343ms)
+ GET /dashboard 200 in 378ms (next.js: 17ms, proxy.ts: 154ms, application-code: 207ms)
+ GET /project/27b63405-0b7f-4928-9d49-1d3b7b52c3c4 200 in 1444ms (next.js: 1107ms, proxy.ts: 86ms, application-code: 250ms)
+ POST /dashboard 303 in 1680ms (next.js: 5ms, proxy.ts: 95ms, application-code: 1580ms)
+  └─ ƒ createProject() in 114ms src/app/(app)/actions.ts
+ POST /api/render 200 in 1165ms (next.js: 925ms, proxy.ts: 78ms, application-code: 161ms)
+⚠ Found a change in next.config.ts. Restarting the server to apply the changes...
+▲ Next.js 16.2.7 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.21.16.1:3000
+- Environments: .env.local
+✓ Ready in 557ms
+
+ GET / 200 in 3.2s (next.js: 2.6s, proxy.ts: 274ms, application-code: 308ms)
+⨯ Error: Cannot find module 'zod'
+    at <unknown> (C:\Users\Cory\Downloads\Video Analyzer\web\.next\dev\server\chunks\[root-of-the-server]__1t8k0bb._.js:82:15)
+    at module evaluation (C:\Users\Cory\Downloads\Video Analyzer\web\.next\dev\server\chunks\[root-of-the-server]__1t8k0bb._.js:85:3)
+    at Object.<anonymous> (C:\Users\Cory\Downloads\Video Analyzer\web\.next\dev\server\app\api\render\route.js:9:3) {
+  code: 'MODULE_NOT_FOUND',
+  page: '/api/render'
+}
+ POST /api/render 500 in 2.6s (next.js: 2.4s, proxy.ts: 10ms, application-code: 157ms)
+⚠ Found a change in next.config.ts. Restarting the server to apply the changes...
+▲ Next.js 16.2.7 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.21.16.1:3000
+- Environments: .env.local
+✓ Ready in 552ms
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\Cory\package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * C:\Users\Cory\Downloads\Video Analyzer\web\package-lock.json
+
+
+ POST /api/render 401 in 608ms (next.js: 252ms, proxy.ts: 303ms, application-code: 54ms)
+ GET / 200 in 694ms (next.js: 265ms, proxy.ts: 9ms, application-code: 421ms)
+ GET /signup 200 in 186ms (next.js: 37ms, proxy.ts: 7ms, application-code: 143ms)
+ GET /dashboard 200 in 497ms (next.js: 81ms, proxy.ts: 95ms, application-code: 320ms)
+ GET /dashboard 200 in 310ms (next.js: 12ms, proxy.ts: 139ms, application-code: 160ms)
+ GET /project/43c46afb-2f9d-4fa6-a5ad-13f1d2b6aea5 200 in 920ms (next.js: 656ms, proxy.ts: 77ms, application-code: 187ms)
+ POST /dashboard 303 in 1117ms (next.js: 5ms, proxy.ts: 81ms, application-code: 1030ms)
+  └─ ƒ createProject() in 92ms src/app/(app)/actions.ts
+ POST /api/render 200 in 204ms (next.js: 4ms, proxy.ts: 80ms, application-code: 120ms)
+ GET / 200 in 113ms (next.js: 12ms, proxy.ts: 13ms, application-code: 88ms)
+ GET /signup 200 in 61ms (next.js: 8ms, proxy.ts: 12ms, application-code: 42ms)
+ GET /signup 200 in 120ms (next.js: 7ms, proxy.ts: 12ms, application-code: 101ms)
+ GET /dashboard 200 in 500ms (next.js: 8ms, proxy.ts: 121ms, application-code: 371ms)
+ GET /dashboard 200 in 468ms (next.js: 32ms, proxy.ts: 155ms, application-code: 281ms)
+ GET /project/471d9850-8a6f-47c5-8608-0f0dc486e1da 200 in 426ms (next.js: 67ms, proxy.ts: 76ms, application-code: 284ms)
+ POST /dashboard 303 in 632ms (next.js: 13ms, proxy.ts: 81ms, application-code: 538ms)
+  └─ ƒ createProject() in 94ms src/app/(app)/actions.ts
+ POST /api/render 200 in 281ms (next.js: 7ms, proxy.ts: 129ms, application-code: 145ms)
+✓ Compiled in 71ms
+ GET /project/471d9850-8a6f-47c5-8608-0f0dc486e1da 200 in 341ms (next.js: 115ms, proxy.ts: 134ms, application-code: 92ms)
+✓ Compiled in 44ms
+ GET /project/471d9850-8a6f-47c5-8608-0f0dc486e1da 200 in 265ms (next.js: 69ms, proxy.ts: 101ms, application-code: 96ms)
+✓ Compiled in 41ms
+ GET /project/471d9850-8a6f-47c5-8608-0f0dc486e1da 200 in 296ms (next.js: 71ms, proxy.ts: 112ms, application-code: 113ms)
+✓ Compiled in 37ms
+ GET /project/471d9850-8a6f-47c5-8608-0f0dc486e1da 200 in 414ms (next.js: 161ms, proxy.ts: 108ms, application-code: 145ms)
+✓ Compiled in 32ms
+ GET /project/471d9850-8a6f-47c5-8608-0f0dc486e1da 200 in 294ms (next.js: 67ms, proxy.ts: 111ms, application-code: 116ms)
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 38ms
+ GET /project/471d9850-8a6f-47c5-8608-0f0dc486e1da 200 in 748ms (next.js: 72ms, proxy.ts: 115ms, application-code: 561ms)
+ GET /signup 200 in 195ms (next.js: 25ms, proxy.ts: 9ms, application-code: 162ms)
+ GET /dashboard 200 in 499ms (next.js: 36ms, proxy.ts: 102ms, application-code: 361ms)
+ GET /dashboard 200 in 348ms (next.js: 22ms, proxy.ts: 119ms, application-code: 207ms)
+ GET /project/6a924849-a2c6-48c7-b1bb-c1e4a9efa375 200 in 393ms (next.js: 25ms, proxy.ts: 110ms, application-code: 258ms)
+ POST /dashboard 303 in 615ms (next.js: 5ms, proxy.ts: 102ms, application-code: 508ms)
+  └─ ƒ createProject() in 96ms src/app/(app)/actions.ts
+ GET /signup 200 in 45ms (next.js: 4ms, proxy.ts: 5ms, application-code: 37ms)
+ GET /dashboard 200 in 227ms (next.js: 4ms, proxy.ts: 66ms, application-code: 157ms)
+ GET /dashboard 200 in 213ms (next.js: 11ms, proxy.ts: 80ms, application-code: 122ms)
+ GET /project/cfacecb5-c749-4cac-ba43-2e69e6e01f84 200 in 218ms (next.js: 18ms, proxy.ts: 60ms, application-code: 140ms)
+ POST /dashboard 303 in 383ms (next.js: 4ms, proxy.ts: 64ms, application-code: 315ms)
+  └─ ƒ createProject() in 84ms src/app/(app)/actions.ts
+✓ Compiled in 83ms
+ GET /signup 200 in 52ms (next.js: 5ms, proxy.ts: 5ms, application-code: 41ms)
+ GET /dashboard 200 in 217ms (next.js: 4ms, proxy.ts: 60ms, application-code: 154ms)
+ GET /dashboard 200 in 191ms (next.js: 4ms, proxy.ts: 72ms, application-code: 115ms)
+ GET /project/c54da0cf-c019-422e-8091-da710684aa95 200 in 225ms (next.js: 20ms, proxy.ts: 58ms, application-code: 147ms)
+ POST /dashboard 303 in 391ms (next.js: 4ms, proxy.ts: 61ms, application-code: 326ms)
+  └─ ƒ createProject() in 87ms src/app/(app)/actions.ts
+ POST /api/render 200 in 238ms (next.js: 78ms, proxy.ts: 64ms, application-code: 96ms)
+ GET /signup 200 in 56ms (next.js: 4ms, proxy.ts: 6ms, application-code: 47ms)
+ GET /dashboard 200 in 229ms (next.js: 4ms, proxy.ts: 65ms, application-code: 160ms)
+ GET /dashboard 200 in 214ms (next.js: 16ms, proxy.ts: 78ms, application-code: 120ms)
+ GET /project/b3dad475-c16f-419f-a646-cc127a7ea0a2 200 in 218ms (next.js: 17ms, proxy.ts: 60ms, application-code: 142ms)
+ POST /dashboard 303 in 385ms (next.js: 4ms, proxy.ts: 62ms, application-code: 319ms)
+  └─ ƒ createProject() in 88ms src/app/(app)/actions.ts
+ POST /api/render 200 in 172ms (next.js: 3ms, proxy.ts: 67ms, application-code: 103ms)
+✓ Compiled in 33ms
+✓ Compiled in 35ms
+✓ Compiled in 66ms
+✓ Compiled in 31ms
+✓ Compiled in 31ms
+ GET / 200 in 289ms (next.js: 77ms, proxy.ts: 71ms, application-code: 141ms)
+[?25h

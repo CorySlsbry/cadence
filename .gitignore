@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+cadence_workspace/
+cadence_brand.db
+engine/output/
+*.db
+
+# Flutter / Dart
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/pubspec.lock
+app/assets/bin/ffmpeg*
+.idea/
+.vscode/
+
+# Web app
+web/.env.local
+web/.next/
+web/node_modules/
+web/e2e/*.png
+
+# Worker
+worker/.env
+worker/diag/
+worker/worker.log
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
+
+# Secrets / cloud credentials (NEVER commit)
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.local
+*-service-account*.json
+*-sa-key*.json
+gcp-key*.json
+worker/ai_spend.json
+
+# Node (root-level safety)
+node_modules/
+*.tsbuildinfo
+next-env.d.ts
+
+# ML model caches + baked artifacts
+models/
+.cache/
+*.tflite
+*.onnx
+
+# Generated media (this is a code repo, not a media store)
+*.mp4
+*.mov
+*.webm
+*.wav
+
+# OS
+Thumbs.db
+.DS_Store

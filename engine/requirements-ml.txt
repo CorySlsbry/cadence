@@ -1,0 +1,4 @@
+# Optional on-device ML upgrades. The engine runs WITHOUT these (lexical retake
+# detection + injected/ffmpeg-whisper transcription); install to upgrade quality.
+faster-whisper>=1.0          # word-level ASR (CTranslate2, no PyTorch, CPU/GPU)
+sentence-transformers>=2.6   # semantic retake similarity (all-MiniLM-L6-v2)

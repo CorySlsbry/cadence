@@ -1,0 +1,41 @@
+# Worker build context = repo root. Keep engine/ + worker/ source (and engine/README.md,
+# which setuptools needs); drop everything heavy or irrelevant to the worker image.
+.git
+.github
+.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.pytest_cache
+**/.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Not part of the worker image
+web
+app
+supabase
+docs
+
+# Engine: keep code + README, drop generated output + build metadata
+engine/output
+engine/cadence_engine.egg-info
+engine/cadence_workspace
+
+# Worker: drop local secrets, diagnostics, ledger
+worker/.env
+worker/ai_spend.json
+worker/diag
+worker/worker.log
+
+# Media + DBs + model caches (never needed in the image; models are prefetched)
+*.mp4
+*.mov
+*.webm
+*.wav
+*.db
+models
+.cache
+
+.DS_Store
+Thumbs.db

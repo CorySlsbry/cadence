@@ -1,0 +1,54 @@
+transcribing…
+cleaned: 99.0s -> 80.6s
+generating AI b-roll (Imagen, spent $0.40/10)…
+Traceback (most recent call last):
+  File "C:\Users\Cory\Downloads\Video Analyzer\worker\scripts\final_render.py", line 73, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "C:\Users\Cory\Downloads\Video Analyzer\worker\scripts\final_render.py", line 53, in main
+    broll = build_ai_broll(words, edl.output_duration, gen, out_dir=broll_dir, mode="between", distiller=distiller)
+  File "C:\Users\Cory\Downloads\Video Analyzer\engine\cadence\synthesis\contextual.py", line 161, in build_ai_broll
+    res = generator.generate(prompt, aspect="9x16", style_refs=style_refs)
+  File "C:\Users\Cory\Downloads\Video Analyzer\engine\cadence\imagegen\imagen.py", line 48, in generate
+    resp = client.models.generate_images(model=self.model, prompt=prompt, config=cfg)
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\google\genai\models.py", line 6751, in generate_images
+    api_response = self._generate_images(
+        model=model,
+        prompt=prompt,
+        config=config,
+    )
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\google\genai\models.py", line 5236, in _generate_images
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\google\genai\_api_client.py", line 1611, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\google\genai\_api_client.py", line 1404, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\tenacity\__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\tenacity\__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\tenacity\__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\tenacity\__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Cory\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Cory\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\tenacity\__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\google\genai\_api_client.py", line 1381, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\google\genai\errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Cory\Downloads\Video Analyzer\.venv\Lib\site-packages\google\genai\errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Resource exhausted. Please try again later. Please refer to https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429 for more details.', 'status': 'RESOURCE_EXHAUSTED'}}
