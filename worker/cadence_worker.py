@@ -238,15 +238,44 @@ class Worker:
             output_key = f"{user_id}/{job_id}.mp4"
             self._upload(OUTPUTS, output_key, out_path)
 
+            credit = bool((job.get("customization") or {}).get("credit_cadence"))
+            captions = self._social_captions(edl, credit=credit)
+
             self._update(
                 job_id,
                 status="done",
                 progress=1.0,
                 output_path=output_key,
                 result=result.to_dict(),
+                social_captions=captions,
                 error=None,
             )
             print(f"[worker] job {job_id} done -> {output_key}", flush=True)
+
+    def _social_captions(self, edl, *, credit: bool = False):
+        """Generate per-platform 'ready to post' captions from the transcript. A cheap
+        gemini-flash call; degrades to a deterministic stub if no key / on failure, and
+        never raises (a caption blip must not fail an otherwise-good render)."""
+        if not (edl.transcript and edl.transcript.words):
+            return None
+        text = " ".join(w.text for w in edl.transcript.words).strip()
+        if not text:
+            return None
+        from cadence.social import GeminiCaptionWriter, StubCaptionWriter, build_social_captions
+
+        try:
+            has_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+            writer = GeminiCaptionWriter() if has_key else StubCaptionWriter()
+        except Exception:  # noqa: BLE001
+            writer = StubCaptionWriter()
+        try:
+            return build_social_captions(
+                text, writer, product=("Cadence" if credit else None),
+                handle=("@cadence.video" if credit else None),
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[worker] social caption generation failed ({exc})", flush=True)
+            return None
 
     def _load_brand(self, project_id: str | None, user_id: str, tmp: str) -> BrandBoard | None:
         if not project_id:
