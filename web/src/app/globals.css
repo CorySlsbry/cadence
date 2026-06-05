@@ -43,3 +43,41 @@ body {
   50% { opacity: 0.35; }
 }
 .animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
+/* ---- premium landing FX (CSS-only, no deps) ---- */
+@keyframes aurora {
+  0%   { transform: translate3d(-8%, -4%, 0) scale(1);    }
+  50%  { transform: translate3d(8%, 4%, 0)  scale(1.18);  }
+  100% { transform: translate3d(-8%, -4%, 0) scale(1);    }
+}
+@keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes gradpan { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+@keyframes scrollscript { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+@keyframes sheen { 0% { background-position: -180% 0; } 100% { background-position: 180% 0; } }
+
+.aurora { position: absolute; border-radius: 9999px; filter: blur(70px); opacity: 0.55; pointer-events: none; animation: aurora 16s ease-in-out infinite; }
+.animate-floaty { animation: floaty 6.5s ease-in-out infinite; }
+.animate-marquee { animation: marquee 30s linear infinite; }
+.animate-scrollscript { animation: scrollscript 14s linear infinite; }
+
+.text-grad {
+  background: linear-gradient(100deg, #ffffff, var(--accent) 55%, #ffffff);
+  background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: gradpan 7s ease infinite;
+}
+.sheen {
+  background-image: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: sheen 3.2s ease-in-out infinite;
+}
+
+/* scroll reveal — toggled by an IntersectionObserver client island */
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora, .animate-floaty, .animate-marquee, .animate-scrollscript, .text-grad, .sheen { animation: none !important; }
+  .reveal { transition: none; opacity: 1; transform: none; }
+}
