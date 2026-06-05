@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
+import { Teleprompter } from "./teleprompter";
 
 /** In-browser A-roll capture (getUserMedia + MediaRecorder). The engine re-normalizes
  *  to 1080×1920/60fps CFR, so the exact webcam resolution doesn't need to be perfect. */
@@ -74,6 +75,7 @@ export function Recorder({ onRecorded }: { onRecorded: (blob: Blob) => void }) {
 
   return (
     <div className="space-y-3">
+      <Teleprompter recording={recording} />
       <div className="relative mx-auto aspect-[9/16] max-w-[240px] overflow-hidden rounded-2xl border border-white/10 bg-black">
         <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
         {recording && (
