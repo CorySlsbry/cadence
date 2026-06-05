@@ -7,6 +7,7 @@ import { Button, Card, Label, Badge } from "@/components/ui";
 import { formatDuration } from "@/lib/utils";
 import type { BrandBoard, Project, RenderJob } from "@/lib/types";
 import { Recorder } from "./recorder";
+import { SocialPanel } from "./social-panel";
 
 type BrollMode = "none" | "images" | "ai" | "background";
 type PresetName = "cinematic" | "cinematic_film" | "clean_ugc" | "documentary" | "gritty_doc" | "custom";
@@ -608,20 +609,23 @@ export function Studio({
         )}
 
         {resultUrl && (
-          <div className="mx-auto max-w-[320px] space-y-4">
-            <video src={resultUrl} controls playsInline className="mx-auto aspect-[9/16] w-full rounded-2xl border border-white/10 bg-black" />
-            <div className="flex items-center justify-center gap-3">
-              <a href={resultUrl} download="cadence.mp4">
-                <Button>Download</Button>
-              </a>
-              <Button variant="outline" onClick={() => { setJob(null); setResultUrl(null); }}>New render</Button>
+          <>
+            <div className="mx-auto max-w-[320px] space-y-4">
+              <video src={resultUrl} controls playsInline className="mx-auto aspect-[9/16] w-full rounded-2xl border border-white/10 bg-black" />
+              <div className="flex items-center justify-center gap-3">
+                <a href={resultUrl} download="cadence.mp4">
+                  <Button>Download</Button>
+                </a>
+                <Button variant="outline" onClick={() => { setJob(null); setResultUrl(null); }}>New render</Button>
+              </div>
+              {job?.result && (
+                <p className="text-xs text-white/35">
+                  {job.result.width}×{job.result.height} · {Math.round(job.result.fps)}fps · {formatDuration(job.result.duration)}
+                </p>
+              )}
             </div>
-            {job?.result && (
-              <p className="text-xs text-white/35">
-                {job.result.width}×{job.result.height} · {Math.round(job.result.fps)}fps · {formatDuration(job.result.duration)}
-              </p>
-            )}
-          </div>
+            {job && <SocialPanel job={job} />}
+          </>
         )}
       </Card>
     </div>

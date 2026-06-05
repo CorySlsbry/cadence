@@ -18,6 +18,20 @@ export type Project = {
   created_at: string;
 };
 
+export type PlatformCaption = {
+  caption?: string;
+  title?: string;
+  description?: string;
+  hashtags?: string[];
+  mentions?: string[];
+};
+
+export type SocialCaptions = {
+  tiktok?: PlatformCaption;
+  youtube?: PlatformCaption;
+  instagram?: PlatformCaption;
+};
+
 export type RenderJob = {
   id: string;
   user_id: string;
@@ -28,6 +42,7 @@ export type RenderJob = {
   progress: number;
   output_path: string | null;
   result: RenderResult | null;
+  social_captions: SocialCaptions | null;
   error: string | null;
   created_at: string;
   updated_at: string;
