@@ -350,6 +350,18 @@ export function Studio({
   }
   useEffect(() => () => stopPolling(), []);
 
+  // Reset to a clean record-ready state: discard the current take + any finished result
+  // so you can shoot and render new videos back-to-back. Called by the footage "Clear"
+  // button, the result-screen "Make another", and automatically when a new take starts.
+  function clearFootage() {
+    stopPolling();
+    setRecordingPath(null);
+    setRecordingName(null);
+    setResultUrl(null);
+    setJob(null);
+    setError(null);
+  }
+
   const rendering = job && (job.status === "queued" || job.status === "processing");
   const cameraLive = brollMode === "ai" || brollMode === "background";
 
@@ -384,13 +396,21 @@ export function Studio({
             <TabBtn active={tab === "upload"} onClick={() => setTab("upload")}>Upload</TabBtn>
           </div>
           {tab === "record" ? (
-            <Recorder onRecorded={(blob) => onRecording(blob, "recording.webm", "webm")} />
+            <Recorder
+              onRecorded={(blob) => onRecording(blob, "recording.webm", "webm")}
+              onRecordStart={clearFootage}
+            />
           ) : (
             <FileButton accept="video/*" busy={uploading === "recording"}
               onFile={(f) => onRecording(f, f.name, f.name.split(".").pop() || "mp4")}
               label="Upload a raw clip" />
           )}
-          {recordingPath && <Badge tone="good" className="mt-3">{recordingName ?? "Footage"} ready</Badge>}
+          {recordingPath && (
+            <div className="mt-3 flex items-center gap-3">
+              <Badge tone="good">{recordingName ?? "Footage"} ready</Badge>
+              <button onClick={clearFootage} className="text-xs text-white/45 hover:text-white">Clear / re-record</button>
+            </div>
+          )}
         </Card>
 
         {/* Brand */}
@@ -643,7 +663,7 @@ export function Studio({
                 <a href={resultUrl} download="cadence.mp4">
                   <Button>Download</Button>
                 </a>
-                <Button variant="outline" onClick={() => { setJob(null); setResultUrl(null); }}>New render</Button>
+                <Button variant="outline" onClick={() => { clearFootage(); setTab("record"); }}>Make another video</Button>
               </div>
               {job?.result && (
                 <p className="text-xs text-white/35">

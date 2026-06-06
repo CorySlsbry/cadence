@@ -5,7 +5,7 @@ import { Teleprompter } from "./teleprompter";
 
 /** In-browser A-roll capture (getUserMedia + MediaRecorder). The engine re-normalizes
  *  to 1080×1920/60fps CFR, so the exact webcam resolution doesn't need to be perfect. */
-export function Recorder({ onRecorded }: { onRecorded: (blob: Blob) => void }) {
+export function Recorder({ onRecorded, onRecordStart }: { onRecorded: (blob: Blob) => void; onRecordStart?: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -66,6 +66,7 @@ export function Recorder({ onRecorded }: { onRecorded: (blob: Blob) => void }) {
 
   function beginCountdown() {
     if (!streamRef.current || recording || countdown !== null) return;
+    onRecordStart?.(); // auto-clear any prior take/result so each Record starts fresh
     let n = 3;
     setCountdown(n);
     cdRef.current = setInterval(() => {
