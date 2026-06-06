@@ -78,5 +78,6 @@ def build_hooks(text: str, llm=None, *, n: int = MAX_HOOKS) -> dict[str, Any]:
         raw = llm.complete(_PROMPT.format(n=n) + f'\n\nTranscript: "{text[:6000]}"')
         out = normalize_hooks(raw, n)
         return out if out["hooks"] else _stub_hooks(text, n)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        print(f"[cadence] build_hooks LLM failed -> stub: {exc!r}", flush=True)
         return _stub_hooks(text, n)

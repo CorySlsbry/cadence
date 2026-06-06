@@ -6,7 +6,6 @@ with the same ``.complete(prompt) -> dict`` shape to unit-test without a network
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Protocol
 
@@ -32,15 +31,9 @@ class GeminiJSON:
         self.model = model
 
     def complete(self, prompt: str, *, temperature: float = 0.7) -> dict[str, Any]:
-        from google.genai import types
+        from cadence._gemini import gemini_json
 
-        resp = self._client.models.generate_content(
-            model=self.model,
-            contents=[prompt],
-            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=temperature),
-        )
-        data = json.loads(resp.text)
-        return data if isinstance(data, dict) else {}
+        return gemini_json(self._client, self.model, prompt, temperature=temperature)
 
 
 def transcript_text(edl_or_transcript) -> str:

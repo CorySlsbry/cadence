@@ -345,14 +345,16 @@ class Worker:
 
     def _gemini_json(self):
         """A GeminiJSON client if a key is present, else None (callers fall back to stubs)."""
+        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+            print("[worker] _gemini_json: no GEMINI_API_KEY in env -> stub", flush=True)
+            return None
         try:
-            if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-                from cadence.social import GeminiJSON
+            from cadence.social import GeminiJSON
 
-                return GeminiJSON()
-        except Exception:  # noqa: BLE001
-            pass
-        return None
+            return GeminiJSON()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[worker] _gemini_json: GeminiJSON() failed -> stub: {exc!r}", flush=True)
+            return None
 
     def _extras(self, edl):
         """Hook variants + repurposed assets from the transcript (cheap flash; stub

@@ -21,7 +21,6 @@ we never depend on the model obeying them. The writer is injected (Gemini or a s
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Protocol
 
@@ -180,15 +179,11 @@ class GeminiCaptionWriter:
         self.model = model
 
     def write(self, transcript_text: str, *, product: str | None, handle: str | None) -> dict[str, Any]:
-        from google.genai import types
+        from cadence._gemini import gemini_json
 
         prompt = _PROMPT.format(product_line=_product_line(product, handle))
-        resp = self._client.models.generate_content(
-            model=self.model,
-            contents=[f'{prompt}\n\nTranscript: "{transcript_text.strip()[:6000]}"'],
-            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.7),
-        )
-        return json.loads(resp.text)
+        full = f'{prompt}\n\nTranscript: "{transcript_text.strip()[:6000]}"'
+        return gemini_json(self._client, self.model, full, temperature=0.7)
 
 
 class StubCaptionWriter:
@@ -217,6 +212,7 @@ def build_social_captions(
     stub draft if the writer fails, so a render never loses its captions to an LLM blip."""
     try:
         raw = writer.write(transcript_text, product=product, handle=handle)
-    except Exception:  # noqa: BLE001 - never fail the render over caption generation
+    except Exception as exc:  # noqa: BLE001 - never fail the render over caption generation
+        print(f"[cadence] caption writer failed -> stub: {exc!r}", flush=True)
         raw = StubCaptionWriter().write(transcript_text, product=product, handle=handle)
     return normalize(raw if isinstance(raw, dict) else {})

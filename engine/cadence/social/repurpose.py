@@ -66,5 +66,6 @@ def build_repurpose(text: str, llm=None) -> dict[str, Any]:
         raw = llm.complete(_PROMPT + f'\n\nTranscript: "{text[:6000]}"')
         out = normalize_repurpose(raw)
         return out if (out["carousel"] or out["thread"] or out["newsletter"]) else _stub_repurpose(text)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        print(f"[cadence] build_repurpose LLM failed -> stub: {exc!r}", flush=True)
         return _stub_repurpose(text)

@@ -105,5 +105,6 @@ def find_clip_moments(transcript, duration: float | None = None, *, max_clips: i
         prompt = _PROMPT.format(dur=duration, n=max_clips, min=min_sec, max=MAX_CLIP_SEC)
         raw = llm.complete(prompt + "\n\nTranscript:\n" + _timestamped(transcript))
         return normalize_moments(raw, duration, max_clips=max_clips, min_sec=min_sec)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        print(f"[cadence] find_clip_moments LLM failed -> single render: {exc!r}", flush=True)
         return []

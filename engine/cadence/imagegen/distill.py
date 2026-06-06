@@ -8,7 +8,6 @@ runs on the same Gemini key as Imagen, costs ~nothing (flash text), and is optio
 
 from __future__ import annotations
 
-import json
 import os
 
 from cadence.errors import DependencyError
@@ -42,15 +41,13 @@ class GeminiDistiller:
 
     def distill(self, snippet: str) -> tuple[str, str]:
         """Return ``(scene, caption)``. Falls back to the raw snippet on any failure."""
-        from google.genai import types
+        from cadence._gemini import gemini_json
 
         try:
-            resp = self._client.models.generate_content(
-                model=self.model,
-                contents=[f"{_SYSTEM}\n\nSnippet: \"{snippet.strip()}\""],
-                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.4),
+            data = gemini_json(
+                self._client, self.model,
+                f"{_SYSTEM}\n\nSnippet: \"{snippet.strip()}\"", temperature=0.4,
             )
-            data = json.loads(resp.text)
             scene = str(data.get("scene", "")).strip()
             caption = str(data.get("caption", "")).strip()
             if scene:
