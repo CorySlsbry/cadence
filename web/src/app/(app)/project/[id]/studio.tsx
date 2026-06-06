@@ -131,6 +131,16 @@ export function Studio({
   const [preset, setPreset] = useState<PresetName>("cinematic");
   const [ctl, setCtl] = useState<ControlState>({ ...BASE, ...PRESETS.cinematic });
 
+  // Hidden, owner-only: re-voice the video in Cory's synthesized voice. Gated on plan==='admin'.
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [voiceover, setVoiceover] = useState("");
+  const adminChecked = useRef(false);
+  useEffect(() => {
+    if (adminChecked.current) return;
+    adminChecked.current = true;
+    supabase.from("profiles").select("plan").single().then(({ data }) => setIsAdmin(data?.plan === "admin"));
+  }, [supabase]);
+
   const [uploading, setUploading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<RenderJob | null>(null);
@@ -288,6 +298,7 @@ export function Studio({
       broll_caption: brollCaption,
       ai_broll: brollMode === "ai",
       pacing,
+      ...(isAdmin && voiceover.trim() ? { voiceover: { script: voiceover.trim() } } : {}),
     };
   }
 
@@ -582,6 +593,22 @@ export function Studio({
           </div>
         )}
       </Card>
+
+      {/* Owner-only voiceover (hidden from non-admin users) */}
+      {isAdmin && (
+        <Card>
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className="text-sm font-semibold">Voiceover</h3>
+            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white/50">internal</span>
+          </div>
+          <p className="mb-3 text-xs text-white/40">
+            Paste a script to re-voice this video in your own voice (synthesized). Leave empty to keep your recorded audio.
+          </p>
+          <textarea value={voiceover} onChange={(e) => setVoiceover(e.target.value)} rows={3}
+            placeholder="Narration script — synthesized in your voice…"
+            className="w-full resize-none rounded-xl border border-white/10 bg-black/40 p-3 text-sm text-white/85 outline-none placeholder:text-white/25 focus:border-[var(--accent)]/40" />
+        </Card>
+      )}
 
       {/* Generate + result */}
       <Card className="text-center">

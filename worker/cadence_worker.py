@@ -235,6 +235,22 @@ class Worker:
                 result = render_plan(plan, out_path, ff=self.ff)
             self._update(job_id, progress=0.92)
 
+            # Hidden voiceover mode (admin-gated in the UI): re-voice the clip with the
+            # owner's synthesized narration. Degrades to the original audio on any failure.
+            vo = job.get("customization") or {}
+            vo_script = (vo.get("voiceover") or {}).get("script", "") if isinstance(vo.get("voiceover"), dict) else ""
+            if vo_script and vo_script.strip():
+                try:
+                    import dataclasses
+
+                    from cadence.ffmpeg.probe import probe_media
+
+                    out_path = self._apply_voiceover(vo_script.strip(), out_path, tmp)
+                    mi = probe_media(out_path, self.ff)
+                    result = dataclasses.replace(result, duration=mi.duration, width=mi.width, height=mi.height)
+                except Exception as exc:  # noqa: BLE001 - never fail the render over the VO
+                    print(f"[worker] voiceover failed ({exc}); keeping original audio", flush=True)
+
             output_key = f"{user_id}/{job_id}.mp4"
             self._upload(OUTPUTS, output_key, out_path)
 
@@ -251,6 +267,17 @@ class Worker:
                 error=None,
             )
             print(f"[worker] job {job_id} done -> {output_key}", flush=True)
+
+    def _apply_voiceover(self, script: str, video_path: str, tmp: str) -> str:
+        """Hidden voiceover mode: synthesize the owner's voice from the script (THE BLEND)
+        and replace the clip's audio (video-follows-voice). Requires GEMINI_API_KEY +
+        ELEVENLABS_API_KEY; raises if unavailable so the caller keeps the original audio."""
+        from cadence.voice import VoiceSynth, mux_voiceover
+
+        vo_path = os.path.join(tmp, "voiceover.mp3")
+        VoiceSynth().blend_to_file(script, vo_path)
+        out = os.path.join(tmp, "vo_final.mp4")
+        return mux_voiceover(video_path, vo_path, out, ff=self.ff)
 
     def _social_captions(self, edl, *, credit: bool = False):
         """Generate per-platform 'ready to post' captions from the transcript. A cheap
