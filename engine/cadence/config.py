@@ -92,7 +92,7 @@ class SynthesisConfig:
     software_encoder: str = "libx264"
     video_bitrate: str = "12M"
     audio_bitrate: str = "192k"
-    crf: int = 19                           # software-encoder quality
+    crf: int = 21                           # software-encoder quality (premium-grade; ~halves file size vs 19)
     color_grade_to_reference: bool = True
 
 

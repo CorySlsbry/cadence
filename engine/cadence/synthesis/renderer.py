@@ -54,7 +54,9 @@ def _encode_args(encoder: str, cfg: SynthesisConfig, fps: int) -> list[str]:
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-r", str(fps),
         ]
     return [
-        "-c:v", "libx264", "-preset", "slow", "-crf", str(cfg.crf),
+        # "medium" preset: ~as small as "slow" in practice but much faster to encode,
+        # which on Cloud Run is real $ saved per render.
+        "-c:v", "libx264", "-preset", "medium", "-crf", str(cfg.crf),
         "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-r", str(fps),
     ]
 
