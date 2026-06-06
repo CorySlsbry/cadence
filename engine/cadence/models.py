@@ -687,6 +687,8 @@ class GenerationPlan:
     caption_outline_hex: str = "#000000"
     audio_normalize: bool = True
     letterbox: bool = False     # 2.39:1 cinematic bars
+    music_path: str | None = None   # background music bed (ducked under speech)
+    music_volume: float = 0.18      # base music level under speech (0..1)
 
     @property
     def total_duration(self) -> float:
@@ -706,6 +708,8 @@ class GenerationPlan:
             "caption_outline_hex": self.caption_outline_hex,
             "audio_normalize": self.audio_normalize,
             "letterbox": self.letterbox,
+            "music_path": self.music_path,
+            "music_volume": self.music_volume,
             "total_duration": self.total_duration,
         }
 
@@ -731,6 +735,8 @@ class GenerationPlan:
                 caption_outline_hex=d.get("caption_outline_hex", "#000000"),
                 audio_normalize=bool(d.get("audio_normalize", True)),
                 letterbox=bool(d.get("letterbox", False)),
+                music_path=d.get("music_path"),
+                music_volume=float(d.get("music_volume", 0.18)),
             )
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ValueError(f"invalid generation plan: {exc}") from exc

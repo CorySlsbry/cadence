@@ -63,7 +63,7 @@ def _encode_args(encoder: str, cfg: SynthesisConfig, fps: int) -> list[str]:
 
 def _build_graph(plan: GenerationPlan, source_index: dict[str, int], has_audio: bool,
                  wm_input_idx: int | None, ass_path: str | None,
-                 broll_start_idx: int = 0, audio_xf: float = 0.0) -> tuple[str, str, str | None]:
+                 broll_start_idx: int = 0, audio_xf: float = 0.0, music_idx: int | None = None) -> tuple[str, str, str | None]:
     parts: list[str] = []
     n = len(plan.clips)
     for i, clip in enumerate(plan.clips):
@@ -146,12 +146,22 @@ def _build_graph(plan: GenerationPlan, source_index: dict[str, int], has_audio: 
 
     cur_a: str | None = None
     if has_audio:
+        speech = "ca"
+        if music_idx is not None:
+            # Background music bed: base-attenuate it, DUCK it under speech via a sidechain
+            # compressor (music dips when the speaker talks), then mix speech (full) + ducked
+            # music. asplit because [ca] feeds BOTH the mix and the compressor's sidechain.
+            vol = max(0.0, min(1.0, plan.music_volume))
+            parts.append("[ca]asplit=2[sp_mix][sp_side]")
+            parts.append(f"[{music_idx}:a]volume={vol:.3f}[mvol]")
+            parts.append("[mvol][sp_side]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=300[mduck]")
+            parts.append("[sp_mix][mduck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[amus]")
+            speech = "amus"
         if plan.audio_normalize:
-            parts.append("[ca]loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
-            cur_a = "aout"
+            parts.append(f"[{speech}]loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
         else:
-            parts.append("[ca]anull[aout]")
-            cur_a = "aout"
+            parts.append(f"[{speech}]anull[aout]")
+        cur_a = "aout"
 
     graph = ";".join(parts)
     return graph, f"[{cur_v}]", (f"[{cur_a}]" if cur_a else None)
@@ -202,11 +212,12 @@ def render_plan(
 
     wm_input_idx = len(sources) if plan.watermark else None
     broll_start_idx = len(sources) + (1 if plan.watermark else 0)
+    music_idx = (broll_start_idx + len(plan.broll)) if (plan.music_path and has_audio) else None
 
     try:
         graph, vlabel, alabel = _build_graph(
             plan, source_index, has_audio, wm_input_idx, ass_path, broll_start_idx,
-            audio_xf=cfg.audio_crossfade_ms / 1000.0,
+            audio_xf=cfg.audio_crossfade_ms / 1000.0, music_idx=music_idx,
         )
         if log_path:
             with open(log_path, "w", encoding="utf-8") as fh:
@@ -241,6 +252,8 @@ def _run_render(ff, plan, out_path, sources, graph, vlabel, alabel, encoder, use
         args += ["-i", plan.watermark.path]
     for b in plan.broll:
         args += ["-loop", "1", "-t", f"{b.duration:.4f}", "-i", b.image_path]
+    if plan.music_path and alabel:
+        args += ["-stream_loop", "-1", "-i", plan.music_path]  # loop music to cover the speech
     args += ["-filter_complex", graph, "-map", vlabel]
     if alabel:
         args += ["-map", alabel]

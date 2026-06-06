@@ -32,6 +32,27 @@ export type SocialCaptions = {
   instagram?: PlatformCaption;
 };
 
+export type Hooks = { hooks: string[]; cold_open: { line: string; why: string } };
+
+export type Repurpose = {
+  carousel: string[];
+  thread: string[];
+  newsletter: string;
+  quote_cards: string[];
+};
+
+export type ClipResult = {
+  index: number;
+  output_path: string;
+  title: string;
+  hook: string;
+  start: number;
+  end: number;
+  duration: number;
+  result: RenderResult | null;
+  social_captions: SocialCaptions | null;
+};
+
 export type RenderJob = {
   id: string;
   user_id: string;
@@ -43,6 +64,9 @@ export type RenderJob = {
   output_path: string | null;
   result: RenderResult | null;
   social_captions: SocialCaptions | null;
+  hooks: Hooks | null;
+  repurpose: Repurpose | null;
+  clips: ClipResult[] | null;
   error: string | null;
   created_at: string;
   updated_at: string;

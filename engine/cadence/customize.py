@@ -37,6 +37,8 @@ class ParsedControls:
     grade_intensity: float = 1.0
     grade_override: dict[str, float] = field(default_factory=dict)
     broll_paths: list[str] = field(default_factory=list)
+    music_key: str | None = None        # uploaded music track storage key (worker downloads it)
+    music_volume: float = 0.18          # base music level under speech (0..1)
 
 
 def _b(d: dict, k: str, default: bool) -> bool:
@@ -124,4 +126,6 @@ def parse_customization(cust: dict[str, Any] | None) -> ParsedControls:
         grade_intensity=float(merged.get("grade_intensity", 70)) / 100.0,
         grade_override=cine.grade_override(),
         broll_paths=list(merged.get("broll_paths") or []),
+        music_key=merged.get("music_path"),
+        music_volume=float(merged.get("music_volume", 0.18)),
     )

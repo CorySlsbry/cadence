@@ -201,6 +201,15 @@ class Worker:
 
             ctrl = parse_customization(job.get("customization") or {})
 
+            # Music bed (uploaded track): download once; applied to every render below.
+            music_path = None
+            if ctrl.music_key:
+                try:
+                    ext = os.path.splitext(ctrl.music_key)[1] or ".mp3"
+                    music_path = self._download(UPLOADS, ctrl.music_key, os.path.join(tmp, f"music{ext}"))
+                except Exception as exc:  # noqa: BLE001 - music is optional
+                    print(f"[worker] music download failed ({exc}); no music bed", flush=True)
+
             transcript = None
             if job.get("transcript"):
                 transcript = Transcript.from_dict(job["transcript"])
@@ -215,6 +224,30 @@ class Worker:
             self._update(job_id, progress=0.6)
 
             brand = self._load_brand(job.get("project_id"), user_id, tmp)
+
+            # Multi-clip mode: one recording -> several standalone shorts. Finds the best
+            # moments, trims + fully renders each, and stores an array of clips on the job.
+            mc = (job.get("customization") or {}).get("multiclip")
+            if mc and not job.get("plan") and edl.transcript and edl.transcript.words:
+                from cadence.ffmpeg.probe import probe_media
+
+                max_clips = int(mc.get("count", 5)) if isinstance(mc, dict) else 5
+                dur = probe_media(recording, self.ff).duration
+                clips = self._render_multiclip(
+                    recording, ctrl, brand, analysis, edl.transcript, dur, music_path,
+                    tmp, user_id, job_id, max_clips,
+                )
+                if clips:
+                    hooks, repurpose = self._extras(edl)
+                    self._update(
+                        job_id, status="done", progress=1.0,
+                        output_path=clips[0]["output_path"], result=clips[0].get("result"),
+                        social_captions=clips[0].get("social_captions"),
+                        clips=clips, hooks=hooks, repurpose=repurpose, error=None,
+                    )
+                    print(f"[worker] job {job_id} done -> {len(clips)} clips", flush=True)
+                    return
+
             if job.get("plan"):
                 plan = GenerationPlan.from_dict(job["plan"])
             else:
@@ -226,6 +259,9 @@ class Worker:
                     plan.captions = []
                 if not ctrl.toggles.watermark:
                     plan.watermark = None
+            if music_path:
+                plan.music_path = music_path
+                plan.music_volume = ctrl.music_volume
             self._update(job_id, progress=0.75)
 
             out_path = os.path.join(tmp, "final.mp4")
@@ -256,6 +292,7 @@ class Worker:
 
             credit = bool((job.get("customization") or {}).get("credit_cadence"))
             captions = self._social_captions(edl, credit=credit)
+            hooks, repurpose = self._extras(edl)
 
             self._update(
                 job_id,
@@ -264,6 +301,8 @@ class Worker:
                 output_path=output_key,
                 result=result.to_dict(),
                 social_captions=captions,
+                hooks=hooks,
+                repurpose=repurpose,
                 error=None,
             )
             print(f"[worker] job {job_id} done -> {output_key}", flush=True)
@@ -303,6 +342,77 @@ class Worker:
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] social caption generation failed ({exc})", flush=True)
             return None
+
+    def _gemini_json(self):
+        """A GeminiJSON client if a key is present, else None (callers fall back to stubs)."""
+        try:
+            if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+                from cadence.social import GeminiJSON
+
+                return GeminiJSON()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    def _extras(self, edl):
+        """Hook variants + repurposed assets from the transcript (cheap flash; stub
+        fallback; never raises). Returns (hooks, repurpose)."""
+        from cadence.social import build_hooks, build_repurpose, transcript_text
+
+        text = transcript_text(edl)
+        if not text:
+            return None, None
+        llm = self._gemini_json()
+        try:
+            return build_hooks(text, llm), build_repurpose(text, llm)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[worker] extras generation failed ({exc})", flush=True)
+            return None, None
+
+    def _render_multiclip(self, recording, ctrl, brand, analysis, transcript, duration,
+                          music_path, tmp, user_id, job_id, max_clips):
+        """Find the best moments and render each as a standalone short. Returns a list of
+        clip dicts (or None → caller falls back to a single full render)."""
+        from cadence.multiclip import find_clip_moments
+
+        moments = find_clip_moments(transcript, duration, max_clips=max_clips, llm=self._gemini_json())
+        if not moments:
+            return None
+        clips: list[dict] = []
+        for i, m in enumerate(moments):
+            try:
+                sub = os.path.join(tmp, f"clip_src_{i}.mp4")
+                # Accurate sub-clip (re-encode; -ss before -i = fast seek, -t bounds length).
+                self.ff.run(
+                    ["-y", "-ss", f"{m.start:.3f}", "-i", recording, "-t", f"{m.duration:.3f}",
+                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", sub],
+                    timeout=600,
+                )
+                edl_i = clean_recording(sub, transcriber=self._get_transcriber(), cfg=ctrl.cleaning, ff=self.ff)
+                plan_i = build_generation_plan(edl_i, analysis=analysis, brand=brand, cfg=ctrl.synthesis)
+                self._apply_cinematography(plan_i, ctrl)
+                if not ctrl.toggles.background_replace:
+                    plan_i.broll = self._build_broll(edl_i, ctrl, brand, tmp)
+                if not ctrl.toggles.captions:
+                    plan_i.captions = []
+                if not ctrl.toggles.watermark:
+                    plan_i.watermark = None
+                if music_path:
+                    plan_i.music_path = music_path
+                    plan_i.music_volume = ctrl.music_volume
+                out_i = os.path.join(tmp, f"clip_{i}.mp4")
+                res_i = render_plan(plan_i, out_i, ff=self.ff)
+                key_i = f"{user_id}/{job_id}-clip{i}.mp4"
+                self._upload(OUTPUTS, key_i, out_i)
+                clips.append({
+                    "index": i, "output_path": key_i, "title": m.title, "hook": m.hook,
+                    "start": m.start, "end": m.end, "duration": res_i.duration,
+                    "result": res_i.to_dict(), "social_captions": self._social_captions(edl_i),
+                })
+                self._update(job_id, progress=round(0.5 + 0.45 * (i + 1) / len(moments), 2))
+            except Exception as exc:  # noqa: BLE001 - one bad clip must not kill the rest
+                print(f"[worker] multiclip clip {i} failed ({exc})", flush=True)
+        return clips or None
 
     def _load_brand(self, project_id: str | None, user_id: str, tmp: str) -> BrandBoard | None:
         if not project_id:
@@ -486,6 +596,7 @@ class Worker:
         fg_plan = dataclasses.replace(
             plan, captions=[], broll=[], watermark=None,
             color_grade=ColorGrade(), letterbox=False, audio_normalize=False,
+            music_path=None,  # music belongs on the final composite, not the matte source
         )
         fg_path = os.path.join(tmp, "bg_fg.mp4")
         render_plan(fg_plan, fg_path, ff=self.ff)

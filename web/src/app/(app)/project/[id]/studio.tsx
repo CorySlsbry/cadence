@@ -8,6 +8,7 @@ import { formatDuration } from "@/lib/utils";
 import type { BrandBoard, Project, RenderJob } from "@/lib/types";
 import { Recorder } from "./recorder";
 import { SocialPanel } from "./social-panel";
+import { ClipsPanel, HooksPanel, RepurposePanel } from "./creator-panels";
 
 type BrollMode = "none" | "images" | "ai" | "background";
 type PresetName = "cinematic" | "cinematic_film" | "clean_ugc" | "documentary" | "gritty_doc" | "custom";
@@ -126,6 +127,10 @@ export function Studio({
   const [lastBrollMode, setLastBrollMode] = useState<BrollMode>("images");
   const [brollCaption, setBrollCaption] = useState(false);
   const [pacing, setPacing] = useState<"natural" | "between" | "match">("between");
+  const [multiclip, setMulticlip] = useState(false);
+  const [multiclipCount, setMulticlipCount] = useState(4);
+  const [musicPath, setMusicPath] = useState<string | null>(null);
+  const [musicVolume, setMusicVolume] = useState(0.18);
 
   const [mode, setMode] = useState<"simple" | "pro">("simple");
   const [preset, setPreset] = useState<PresetName>("cinematic");
@@ -298,8 +303,22 @@ export function Studio({
       broll_caption: brollCaption,
       ai_broll: brollMode === "ai",
       pacing,
+      ...(multiclip ? { multiclip: { count: multiclipCount } } : {}),
+      ...(musicPath ? { music_path: musicPath, music_volume: musicVolume } : {}),
       ...(isAdmin && voiceover.trim() ? { voiceover: { script: voiceover.trim() } } : {}),
     };
+  }
+
+  async function onMusic(file: File) {
+    setError(null);
+    setUploading("music");
+    try {
+      setMusicPath(await upload(file, "music", file.name.split(".").pop() || "mp3"));
+    } catch (e) {
+      setError(msg(e));
+    } finally {
+      setUploading(null);
+    }
   }
 
   async function generate() {
@@ -630,6 +649,34 @@ export function Studio({
         </Card>
       )}
 
+      {/* Clips & music */}
+      <Card>
+        <SectionHead n="6" title="Clips & music" done={multiclip || !!musicPath} />
+        <div className="space-y-4">
+          <Toggle label="Split into multiple clips"
+            hint="Find the best moments in a longer recording and render several standalone shorts"
+            checked={multiclip} onChange={setMulticlip} />
+          {multiclip && (
+            <Segmented label="How many clips" value={String(multiclipCount)}
+              options={[["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"]]}
+              onChange={(v) => setMulticlipCount(Number(v))} />
+          )}
+          <div>
+            <Label>Background music (optional)</Label>
+            <div className="flex items-center gap-2">
+              <FileButton accept="audio/*" busy={uploading === "music"} onFile={onMusic}
+                label={musicPath ? "Replace music" : "Upload music"} />
+              {musicPath && <button onClick={() => setMusicPath(null)} className="text-xs text-white/45 hover:text-white">Remove</button>}
+            </div>
+            {musicPath && (
+              <Slider label="Music volume" value={musicVolume} min={0.05} max={0.5} step={0.01}
+                display={`${Math.round(musicVolume * 100)}%`} onChange={setMusicVolume} />
+            )}
+            <p className="mt-1 text-xs text-white/35">Ducks automatically under your voice.</p>
+          </div>
+        </div>
+      </Card>
+
       {/* Generate + result */}
       <Card className="text-center">
         {!job && (
@@ -657,21 +704,30 @@ export function Studio({
 
         {resultUrl && (
           <>
-            <div className="mx-auto max-w-[320px] space-y-4">
-              <video src={resultUrl} controls playsInline className="mx-auto aspect-[9/16] w-full rounded-2xl border border-white/10 bg-black" />
-              <div className="flex items-center justify-center gap-3">
-                <a href={resultUrl} download="cadence.mp4">
-                  <Button>Download</Button>
-                </a>
+            {job?.clips?.length ? (
+              <div className="space-y-4">
+                <ClipsPanel job={job} />
                 <Button variant="outline" onClick={() => { clearFootage(); setTab("record"); }}>Make another video</Button>
               </div>
-              {job?.result && (
-                <p className="text-xs text-white/35">
-                  {job.result.width}×{job.result.height} · {Math.round(job.result.fps)}fps · {formatDuration(job.result.duration)}
-                </p>
-              )}
-            </div>
+            ) : (
+              <div className="mx-auto max-w-[320px] space-y-4">
+                <video src={resultUrl} controls playsInline className="mx-auto aspect-[9/16] w-full rounded-2xl border border-white/10 bg-black" />
+                <div className="flex items-center justify-center gap-3">
+                  <a href={resultUrl} download="cadence.mp4">
+                    <Button>Download</Button>
+                  </a>
+                  <Button variant="outline" onClick={() => { clearFootage(); setTab("record"); }}>Make another video</Button>
+                </div>
+                {job?.result && (
+                  <p className="text-xs text-white/35">
+                    {job.result.width}×{job.result.height} · {Math.round(job.result.fps)}fps · {formatDuration(job.result.duration)}
+                  </p>
+                )}
+              </div>
+            )}
             {job && <SocialPanel job={job} />}
+            {job && <HooksPanel job={job} />}
+            {job && <RepurposePanel job={job} />}
           </>
         )}
       </Card>
