@@ -70,7 +70,28 @@ def revoke_refresh(token_hash: str) -> None:
     admin().table("oauth_refresh_tokens").update({"revoked": True}).eq("token_hash", token_hash).execute()
 
 
+_VIDEO_EXT = (".mp4", ".webm", ".mov", ".m4v")
+
+
 # --- tool queries (all scoped to user_id) ------------------------------------------------
+def list_recordings(user_id: str) -> list[dict[str, Any]]:
+    """The user's uploaded recordings (their folder in the uploads bucket). Returns the
+    storage key as recording_path so it can be passed straight to start_render."""
+    try:
+        items = admin().storage.from_("uploads").list(user_id)
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[dict[str, Any]] = []
+    for it in items or []:
+        name = it.get("name", "")
+        if not name.lower().endswith(_VIDEO_EXT):
+            continue
+        meta = it.get("metadata") or {}
+        out.append({"recording_path": f"{user_id}/{name}", "name": name,
+                    "size": meta.get("size"), "created_at": it.get("created_at")})
+    return out
+
+
 def list_projects(user_id: str) -> list[dict[str, Any]]:
     r = (admin().table("projects").select("id,name,created_at")
          .eq("user_id", user_id).order("created_at", desc=True).limit(50).execute())

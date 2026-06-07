@@ -93,7 +93,10 @@ sid = init.headers.get("mcp-session-id")
 step("initialize (authenticated)", init.status_code == 200, f"session={bool(sid)}")
 rpc("notifications/initialized", {}, sid=sid, notify=True)
 
-call = rpc("tools/call", {"name": "list_projects", "arguments": {}}, sid=sid)
+tl = rpc("tools/list", {}, sid=sid)
+step("tools/list includes list_recordings", "list_recordings" in tl.text and "list_projects" in tl.text)
+
+call = rpc("tools/call", {"name": "list_recordings", "arguments": {}}, sid=sid)
 txt = call.text
 ok = call.status_code == 200 and ("result" in txt or "content" in txt)
 step("tools/call list_projects (scoped to user)", ok, txt[:120].replace("\n", " "))

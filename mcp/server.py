@@ -37,6 +37,13 @@ def _uid() -> str:
 
 
 @mcp.tool
+def list_recordings() -> list[dict]:
+    """List your uploaded recordings (recording_path, name, size, created_at), so you can pass
+    a recording_path to start_render. Upload recordings in the Cadence app first."""
+    return db.list_recordings(_uid())
+
+
+@mcp.tool
 def list_projects() -> list[dict]:
     """List your Cadence projects (id, name, created_at), newest first."""
     return db.list_projects(_uid())
