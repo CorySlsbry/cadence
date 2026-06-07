@@ -20,6 +20,12 @@ _COST = {
     "imagen-4.0-generate-001": 0.04,
     "imagen-4.0-ultra-generate-001": 0.06,
 }
+# The Studio b-roll quality slider maps to these Imagen 4 tiers (cost/quality).
+QUALITY_MODELS = {
+    "fast": "imagen-4.0-fast-generate-001",
+    "standard": "imagen-4.0-generate-001",
+    "ultra": "imagen-4.0-ultra-generate-001",
+}
 
 
 class ImagenGenerator:

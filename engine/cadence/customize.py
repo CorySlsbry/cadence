@@ -33,6 +33,7 @@ class ParsedControls:
     toggles: RenderToggles
     pacing: str = "between"
     broll_mode: str = "ai"            # none | images | ai | background
+    broll_quality: str = "standard"   # fast | standard | ultra → Imagen tier (cost/quality)
     broll_caption_overlay: bool = False
     grade_intensity: float = 1.0
     grade_override: dict[str, float] = field(default_factory=dict)
@@ -107,6 +108,9 @@ def parse_customization(cust: dict[str, Any] | None) -> ParsedControls:
         syn.zoom_factor = round(max(syn.zoom_factor, cine.zoom_bias()), 4)
 
     broll_mode = merged.get("broll_mode", "ai")
+    broll_quality = merged.get("broll_quality", "standard")
+    if broll_quality not in ("fast", "standard", "ultra"):
+        broll_quality = "standard"
     toggles = RenderToggles(
         auto_clean=_b(merged, "auto_clean", True),
         smart_zoom=syn.smart_zoom,
@@ -122,6 +126,7 @@ def parse_customization(cust: dict[str, Any] | None) -> ParsedControls:
         cleaning=clean, synthesis=syn, cinematography=cine, toggles=toggles,
         pacing=merged.get("pacing", "between"),
         broll_mode=broll_mode,
+        broll_quality=broll_quality,
         broll_caption_overlay=_b(merged, "broll_caption", False),
         grade_intensity=float(merged.get("grade_intensity", 70)) / 100.0,
         grade_override=cine.grade_override(),

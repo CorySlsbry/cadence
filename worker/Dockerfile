@@ -6,7 +6,8 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    HF_HOME=/opt/models/hf
+    HF_HOME=/opt/models/hf \
+    CADENCE_WHISPER_MODEL=medium.en
 
 # ffmpeg (built with libx264 + libass on Debian) and the shared libs MediaPipe needs.
 RUN apt-get update && apt-get install -y --no-install-recommends \

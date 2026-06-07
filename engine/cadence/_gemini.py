@@ -12,6 +12,7 @@ captions, b-roll distill).
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from typing import Any, Callable
@@ -25,11 +26,21 @@ _RETRYABLE_MARKERS = (
 # A model becoming uncallable (404/deprecated/unsupported) should fall over to the next
 # model, not abort the whole chain (and not retry — it won't come back).
 _UNAVAILABLE_MARKERS = ("404", "not_found", "not found", "not supported", "does not exist")
-# When the primary model is overloaded (gemini-2.5-flash 503s intermittently under load),
-# fall over to less-loaded models rather than degrade the feature to its stub. Every entry is
-# verified callable in JSON mode on the production key, and spans distinct backends/generations
-# so a simultaneous outage of all is effectively impossible.
-_FALLBACK_MODELS = ("gemini-2.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash")
+# When the primary model is overloaded (e.g. gemini-2.5-pro/flash 503 under load), fall over to
+# less-loaded models rather than degrade the feature to its stub. Quality-FIRST order so a premium
+# (pro) task degrades to a strong model, never straight to lite. Every entry is verified callable
+# in JSON mode on the production key; they span backends/generations so a simultaneous outage is
+# effectively impossible. (gemini-2.5-pro itself falls over to gemini-2.5-flash here.)
+_FALLBACK_MODELS = ("gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite")
+
+# Per-task model selection — premium app: the BEST model for each task, not the biggest everywhere.
+# Judgment + highest-leverage creative get the flagship; bulk/formulaic get a strong fast model;
+# trivial transforms stay cheap. Env-overridable. All fall over via gemini_json() under load.
+MODEL_CLIPS = os.environ.get("CADENCE_MODEL_CLIPS", "gemini-2.5-pro")           # viral-moment judgment
+MODEL_HOOKS = os.environ.get("CADENCE_MODEL_HOOKS", "gemini-2.5-pro")           # first-3s creative (highest leverage)
+MODEL_REPURPOSE = os.environ.get("CADENCE_MODEL_REPURPOSE", "gemini-3.5-flash")  # bulk multi-format creative
+MODEL_CAPTIONS = os.environ.get("CADENCE_MODEL_CAPTIONS", "gemini-3.5-flash")    # per-platform copy
+MODEL_DISTILL = os.environ.get("CADENCE_MODEL_DISTILL", "gemini-2.5-flash")      # snippet → b-roll scene prompt (trivial)
 
 
 def lenient_json_loads(text: str | None) -> dict[str, Any]:

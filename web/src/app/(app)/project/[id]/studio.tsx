@@ -126,6 +126,7 @@ export function Studio({
   // Remember the last non-AI source so the Simple-mode AI toggle can restore it (not reset to Off).
   const [lastBrollMode, setLastBrollMode] = useState<BrollMode>("images");
   const [brollCaption, setBrollCaption] = useState(false);
+  const [brollQuality, setBrollQuality] = useState<"fast" | "standard" | "ultra">("standard");
   const [pacing, setPacing] = useState<"natural" | "between" | "match">("between");
   const [multiclip, setMulticlip] = useState(false);
   const [multiclipCount, setMulticlipCount] = useState(4);
@@ -300,6 +301,7 @@ export function Studio({
       // B-ROLL
       broll_paths: brollPaths,
       broll_mode: brollMode,
+      broll_quality: brollQuality,
       broll_caption: brollCaption,
       ai_broll: brollMode === "ai",
       pacing,
@@ -471,6 +473,17 @@ export function Studio({
               We <b>cut out the speaker</b> and drop them over a contextual b-roll background generated from
               your words (or your first uploaded image). Your camera background disappears.
             </p>
+          )}
+          {(brollMode === "ai" || brollMode === "background") && (
+            <div className="mb-4">
+              <Slider label="Image quality"
+                value={["fast", "standard", "ultra"].indexOf(brollQuality)} min={0} max={2} step={1}
+                display={{ fast: "Fast · $0.02 / image", standard: "Standard · $0.04 / image", ultra: "Ultra · $0.06 / image" }[brollQuality]}
+                onChange={(i) => { setBrollQuality((["fast", "standard", "ultra"] as const)[i]); setPreset("custom"); }} />
+              <p className="mt-1 text-xs text-white/35">
+                Higher tiers render sharper, more detailed AI imagery (Imagen&nbsp;4). Charged per image generated, inside your credit budget.
+              </p>
+            </div>
           )}
           {brollMode !== "none" && (
             <>

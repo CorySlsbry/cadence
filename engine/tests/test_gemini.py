@@ -20,7 +20,8 @@ from cadence._gemini import (
     lenient_json_loads,
 )
 
-_PRIMARY = "gemini-2.5-flash"  # not in _FALLBACK_MODELS, so fallback count is deterministic
+_PRIMARY = "gemini-2.5-pro"  # a real premium primary, deliberately NOT in _FALLBACK_MODELS
+assert _PRIMARY not in _FALLBACK_MODELS  # keeps the fallover/give-up call-count math below valid
 
 
 class _Resp:

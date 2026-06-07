@@ -18,8 +18,19 @@ def test_defaults_are_production_safe():
     assert c.toggles.captions is True
     assert c.toggles.watermark is True
     assert c.broll_mode == "ai"
+    assert c.broll_quality == "standard"
     assert c.toggles.background_replace is False
     assert c.toggles.letterbox is False
+
+
+@pytest.mark.parametrize("value", ["fast", "standard", "ultra"])
+def test_broll_quality_passes_through_valid_tiers(value):
+    assert parse_customization({"broll_quality": value}).broll_quality == value
+
+
+@pytest.mark.parametrize("bad", ["", "premium", "4k", None, 3])
+def test_broll_quality_falls_back_to_standard_on_invalid(bad):
+    assert parse_customization({"broll_quality": bad}).broll_quality == "standard"
 
 
 def test_grade_intensity_defaults_to_seventy_percent():

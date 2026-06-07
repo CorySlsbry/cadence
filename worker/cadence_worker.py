@@ -327,11 +327,12 @@ class Worker:
         text = " ".join(w.text for w in edl.transcript.words).strip()
         if not text:
             return None
+        from cadence._gemini import MODEL_CAPTIONS
         from cadence.social import GeminiCaptionWriter, StubCaptionWriter, build_social_captions
 
         try:
             has_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-            writer = GeminiCaptionWriter() if has_key else StubCaptionWriter()
+            writer = GeminiCaptionWriter(model=MODEL_CAPTIONS) if has_key else StubCaptionWriter()
         except Exception:  # noqa: BLE001
             writer = StubCaptionWriter()
         try:
@@ -343,30 +344,34 @@ class Worker:
             print(f"[worker] social caption generation failed ({exc})", flush=True)
             return None
 
-    def _gemini_json(self):
-        """A GeminiJSON client if a key is present, else None (callers fall back to stubs)."""
+    def _gemini_json(self, model: str = "gemini-2.5-flash"):
+        """A GeminiJSON client on the given model if a key is present, else None (callers fall
+        back to stubs). The model auto-falls-over to alternates under load inside GeminiJSON."""
         if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
             print("[worker] _gemini_json: no GEMINI_API_KEY in env -> stub", flush=True)
             return None
         try:
             from cadence.social import GeminiJSON
 
-            return GeminiJSON()
+            return GeminiJSON(model=model)
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] _gemini_json: GeminiJSON() failed -> stub: {exc!r}", flush=True)
             return None
 
     def _extras(self, edl):
-        """Hook variants + repurposed assets from the transcript (cheap flash; stub
-        fallback; never raises). Returns (hooks, repurpose)."""
+        """Hook variants + repurposed assets from the transcript. Premium per-task models
+        (hooks = flagship, repurpose = strong fast model); stub fallback; never raises."""
+        from cadence._gemini import MODEL_HOOKS, MODEL_REPURPOSE
         from cadence.social import build_hooks, build_repurpose, transcript_text
 
         text = transcript_text(edl)
         if not text:
             return None, None
-        llm = self._gemini_json()
         try:
-            return build_hooks(text, llm), build_repurpose(text, llm)
+            return (
+                build_hooks(text, self._gemini_json(model=MODEL_HOOKS)),
+                build_repurpose(text, self._gemini_json(model=MODEL_REPURPOSE)),
+            )
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] extras generation failed ({exc})", flush=True)
             return None, None
@@ -375,9 +380,11 @@ class Worker:
                           music_path, tmp, user_id, job_id, max_clips):
         """Find the best moments and render each as a standalone short. Returns a list of
         clip dicts (or None → caller falls back to a single full render)."""
+        from cadence._gemini import MODEL_CLIPS
         from cadence.multiclip import find_clip_moments
 
-        moments = find_clip_moments(transcript, duration, max_clips=max_clips, llm=self._gemini_json())
+        moments = find_clip_moments(transcript, duration, max_clips=max_clips,
+                                    llm=self._gemini_json(model=MODEL_CLIPS))
         if not moments:
             return None
         clips: list[dict] = []
@@ -462,16 +469,16 @@ class Worker:
             print("[worker] WARN: ai_spend table unreachable; using local JSON ledger", flush=True)
             return CostLedger(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_spend.json"), cap)
 
-    def _image_generator(self):
+    def _image_generator(self, quality: str = "standard"):
         """Pick the best available, budget-capped generator: Imagen (Gemini key) →
-        Ideogram (key) → free stub."""
+        Ideogram (key) → free stub. ``quality`` (fast|standard|ultra) picks the Imagen tier."""
         cap = float(os.environ.get("CADENCE_AI_BUDGET_USD", "10"))
         ledger = self._ledger(cap)
         if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-            from cadence.imagegen.imagen import ImagenGenerator
+            from cadence.imagegen.imagen import QUALITY_MODELS, ImagenGenerator
 
-            gen = ImagenGenerator(ledger=ledger)
-            print(f"[worker] AI b-roll via Imagen ({gen.model}, budget ${cap:.2f}, spent ${ledger.spent():.2f})", flush=True)
+            gen = ImagenGenerator(model=QUALITY_MODELS.get(quality), ledger=ledger)
+            print(f"[worker] AI b-roll via Imagen ({gen.model} '{quality}' ${gen.cost_per_image}/img, budget ${cap:.2f}, spent ${ledger.spent():.2f})", flush=True)
             return gen
         if os.environ.get("IDEOGRAM_API_KEY"):
             from cadence.imagegen.ideogram import IdeogramGenerator
@@ -515,7 +522,7 @@ class Worker:
             words_out = remap_words_to_output(edl.transcript, list(edl.kept))
             try:
                 return build_ai_broll(
-                    words_out, edl.output_duration, self._image_generator(),
+                    words_out, edl.output_duration, self._image_generator(ctrl.broll_quality),
                     out_dir=out_dir, mode=ctrl.pacing,
                     style_refs=(pool[:3] or None),  # brand/uploaded images steer the look
                     overlay_text=ctrl.broll_caption_overlay,
