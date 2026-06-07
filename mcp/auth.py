@@ -100,6 +100,7 @@ class CadenceOAuth(OAuthProvider):
             redirect_uris=row["redirect_uris"],
             client_name=row.get("client_name"),
             grant_types=row.get("grant_types") or ["authorization_code", "refresh_token"],
+            scope="cadence",  # the one scope this AS grants; without it /authorize 400s invalid_scope
             token_endpoint_auth_method="none" if not row.get("client_secret") else "client_secret_post",
         )
 

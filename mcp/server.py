@@ -29,7 +29,11 @@ mcp = FastMCP(
 
 def _uid() -> str:
     """The authenticated Cadence user id (the bearer token's subject)."""
-    return get_access_token().subject
+    tok = get_access_token()
+    uid = getattr(tok, "subject", None) or (getattr(tok, "claims", None) or {}).get("sub")
+    if not uid:
+        raise ValueError("no authenticated user on this request")
+    return uid
 
 
 @mcp.tool
