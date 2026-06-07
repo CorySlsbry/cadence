@@ -1,0 +1,6 @@
+# Cadence remote MCP service — intentionally light (no engine / torch / ffmpeg). It only
+# speaks the MCP protocol + OAuth 2.1 and talks to Supabase as the authenticated user.
+fastmcp==3.4.2
+supabase==2.31.0
+pyjwt[crypto]>=2.12.0
+uvicorn[standard]==0.49.0
