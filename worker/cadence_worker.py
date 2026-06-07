@@ -186,6 +186,7 @@ class Worker:
         job_id = job["id"]
         user_id = job["user_id"]
         print(f"[worker] claimed job {job_id}", flush=True)
+        keys = self._resolve_keys(user_id)  # per-user BYOK keys (or shared fallback) for every AI call
 
         with tempfile.TemporaryDirectory(prefix="cadence_job_") as tmp:
             recording = self._download(UPLOADS, job["recording_path"], os.path.join(tmp, "recording.mp4"))
@@ -235,10 +236,10 @@ class Worker:
                 dur = probe_media(recording, self.ff).duration
                 clips = self._render_multiclip(
                     recording, ctrl, brand, analysis, edl.transcript, dur, music_path,
-                    tmp, user_id, job_id, max_clips,
+                    tmp, user_id, job_id, max_clips, keys,
                 )
                 if clips:
-                    hooks, repurpose = self._extras(edl)
+                    hooks, repurpose = self._extras(edl, keys)
                     self._update(
                         job_id, status="done", progress=1.0,
                         output_path=clips[0]["output_path"], result=clips[0].get("result"),
@@ -254,7 +255,7 @@ class Worker:
                 plan = build_generation_plan(edl, analysis=analysis, brand=brand, cfg=ctrl.synthesis)
                 self._apply_cinematography(plan, ctrl)
                 if not ctrl.toggles.background_replace:
-                    plan.broll = self._build_broll(edl, ctrl, brand, tmp)
+                    plan.broll = self._build_broll(edl, ctrl, brand, tmp, keys)
                 if not ctrl.toggles.captions:
                     plan.captions = []
                 if not ctrl.toggles.watermark:
@@ -266,7 +267,7 @@ class Worker:
 
             out_path = os.path.join(tmp, "final.mp4")
             if not job.get("plan") and ctrl.toggles.background_replace:
-                result = self._render_background_mode(edl, plan, ctrl, brand, tmp, out_path)
+                result = self._render_background_mode(edl, plan, ctrl, brand, tmp, out_path, keys)
             else:
                 result = render_plan(plan, out_path, ff=self.ff)
             self._update(job_id, progress=0.92)
@@ -281,7 +282,7 @@ class Worker:
 
                     from cadence.ffmpeg.probe import probe_media
 
-                    out_path = self._apply_voiceover(vo_script.strip(), out_path, tmp)
+                    out_path = self._apply_voiceover(vo_script.strip(), out_path, tmp, keys)
                     mi = probe_media(out_path, self.ff)
                     result = dataclasses.replace(result, duration=mi.duration, width=mi.width, height=mi.height)
                 except Exception as exc:  # noqa: BLE001 - never fail the render over the VO
@@ -291,8 +292,8 @@ class Worker:
             self._upload(OUTPUTS, output_key, out_path)
 
             credit = bool((job.get("customization") or {}).get("credit_cadence"))
-            captions = self._social_captions(edl, credit=credit)
-            hooks, repurpose = self._extras(edl)
+            captions = self._social_captions(edl, credit=credit, keys=keys)
+            hooks, repurpose = self._extras(edl, keys)
 
             self._update(
                 job_id,
@@ -307,21 +308,26 @@ class Worker:
             )
             print(f"[worker] job {job_id} done -> {output_key}", flush=True)
 
-    def _apply_voiceover(self, script: str, video_path: str, tmp: str) -> str:
+    def _apply_voiceover(self, script: str, video_path: str, tmp: str, keys=None) -> str:
         """Hidden voiceover mode: synthesize the owner's voice from the script (THE BLEND)
-        and replace the clip's audio (video-follows-voice). Requires GEMINI_API_KEY +
-        ELEVENLABS_API_KEY; raises if unavailable so the caller keeps the original audio."""
+        and replace the clip's audio (video-follows-voice). Uses the user's Gemini + ElevenLabs
+        keys (falls back to shared via the adapters); raises if unavailable so the caller keeps
+        the original audio."""
         from cadence.voice import VoiceSynth, mux_voiceover
+        from cadence.voice.synth import ElevenLabsSTS, GeminiCharonTTS
 
+        gkey = (keys or {}).get("gemini", (None, False))[0]
+        ekey = (keys or {}).get("elevenlabs", (None, False))[0]
+        synth = VoiceSynth(tts=GeminiCharonTTS(api_key=gkey), sts=ElevenLabsSTS(api_key=ekey))
         vo_path = os.path.join(tmp, "voiceover.mp3")
-        VoiceSynth().blend_to_file(script, vo_path)
+        synth.blend_to_file(script, vo_path)
         out = os.path.join(tmp, "vo_final.mp4")
         return mux_voiceover(video_path, vo_path, out, ff=self.ff)
 
-    def _social_captions(self, edl, *, credit: bool = False):
+    def _social_captions(self, edl, *, credit: bool = False, keys=None):
         """Generate per-platform 'ready to post' captions from the transcript. A cheap
-        gemini-flash call; degrades to a deterministic stub if no key / on failure, and
-        never raises (a caption blip must not fail an otherwise-good render)."""
+        gemini-flash call on the user's Gemini key; degrades to a deterministic stub if no key /
+        on failure, and never raises (a caption blip must not fail an otherwise-good render)."""
         if not (edl.transcript and edl.transcript.words):
             return None
         text = " ".join(w.text for w in edl.transcript.words).strip()
@@ -330,9 +336,9 @@ class Worker:
         from cadence._gemini import MODEL_CAPTIONS
         from cadence.social import GeminiCaptionWriter, StubCaptionWriter, build_social_captions
 
+        gkey = (keys or {}).get("gemini", (None, False))[0]
         try:
-            has_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-            writer = GeminiCaptionWriter(model=MODEL_CAPTIONS) if has_key else StubCaptionWriter()
+            writer = GeminiCaptionWriter(model=MODEL_CAPTIONS, api_key=gkey) if gkey else StubCaptionWriter()
         except Exception:  # noqa: BLE001
             writer = StubCaptionWriter()
         try:
@@ -344,47 +350,72 @@ class Worker:
             print(f"[worker] social caption generation failed ({exc})", flush=True)
             return None
 
-    def _gemini_json(self, model: str = "gemini-2.5-flash"):
-        """A GeminiJSON client on the given model if a key is present, else None (callers fall
-        back to stubs). The model auto-falls-over to alternates under load inside GeminiJSON."""
-        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
-            print("[worker] _gemini_json: no GEMINI_API_KEY in env -> stub", flush=True)
+    def _resolve_keys(self, user_id):
+        """Resolve each provider key for this user: their OWN (BYOK) if connected + active,
+        else the shared Cloud Run key. Returns {provider: (key_or_None, is_byok)} from one
+        indexed read. Read/decrypt failures degrade to the shared key — never crash a render."""
+        shared_env = {"gemini": "GEMINI_API_KEY", "elevenlabs": "ELEVENLABS_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+        byok: dict[str, str] = {}
+        try:
+            from keyvault import decrypt_secret
+
+            r = (self.supabase.table("user_connections").select("provider,secret_enc")
+                 .eq("user_id", user_id).eq("status", "active").execute())
+            for row in (r.data or []):
+                try:
+                    byok[row["provider"]] = decrypt_secret(row["secret_enc"])
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[worker] decrypt {row['provider']} failed ({exc!r}); using shared key", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[worker] user_connections read failed ({exc!r}); using shared keys", flush=True)
+        out: dict[str, tuple[str | None, bool]] = {}
+        for prov, env in shared_env.items():
+            out[prov] = (byok[prov], True) if prov in byok else (os.environ.get(env), False)
+        return out
+
+    def _gemini_json(self, model: str = "gemini-2.5-flash", api_key: str | None = None):
+        """A GeminiJSON client on the given model + key, else None (callers fall back to stubs).
+        The model auto-falls-over to alternates under load inside GeminiJSON."""
+        if not api_key:
             return None
         try:
             from cadence.social import GeminiJSON
 
-            return GeminiJSON(model=model)
+            return GeminiJSON(model=model, api_key=api_key)
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] _gemini_json: GeminiJSON() failed -> stub: {exc!r}", flush=True)
             return None
 
-    def _extras(self, edl):
+    def _extras(self, edl, keys):
         """Hook variants + repurposed assets from the transcript. Premium per-task models
-        (hooks = flagship, repurpose = strong fast model); stub fallback; never raises."""
+        (hooks = flagship, repurpose = strong fast model) on the user's Gemini key; stub
+        fallback; never raises."""
         from cadence._gemini import MODEL_HOOKS, MODEL_REPURPOSE
         from cadence.social import build_hooks, build_repurpose, transcript_text
 
         text = transcript_text(edl)
         if not text:
             return None, None
+        gkey = keys["gemini"][0]
         try:
             return (
-                build_hooks(text, self._gemini_json(model=MODEL_HOOKS)),
-                build_repurpose(text, self._gemini_json(model=MODEL_REPURPOSE)),
+                build_hooks(text, self._gemini_json(MODEL_HOOKS, gkey)),
+                build_repurpose(text, self._gemini_json(MODEL_REPURPOSE, gkey)),
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] extras generation failed ({exc})", flush=True)
             return None, None
 
     def _render_multiclip(self, recording, ctrl, brand, analysis, transcript, duration,
-                          music_path, tmp, user_id, job_id, max_clips):
+                          music_path, tmp, user_id, job_id, max_clips, keys=None):
         """Find the best moments and render each as a standalone short. Returns a list of
         clip dicts (or None → caller falls back to a single full render)."""
         from cadence._gemini import MODEL_CLIPS
         from cadence.multiclip import find_clip_moments
 
+        gkey = (keys or {}).get("gemini", (None, False))[0]
         moments = find_clip_moments(transcript, duration, max_clips=max_clips,
-                                    llm=self._gemini_json(model=MODEL_CLIPS))
+                                    llm=self._gemini_json(MODEL_CLIPS, gkey))
         if not moments:
             return None
         clips: list[dict] = []
@@ -401,7 +432,7 @@ class Worker:
                 plan_i = build_generation_plan(edl_i, analysis=analysis, brand=brand, cfg=ctrl.synthesis)
                 self._apply_cinematography(plan_i, ctrl)
                 if not ctrl.toggles.background_replace:
-                    plan_i.broll = self._build_broll(edl_i, ctrl, brand, tmp)
+                    plan_i.broll = self._build_broll(edl_i, ctrl, brand, tmp, keys)
                 if not ctrl.toggles.captions:
                     plan_i.captions = []
                 if not ctrl.toggles.watermark:
@@ -416,7 +447,7 @@ class Worker:
                 clips.append({
                     "index": i, "output_path": key_i, "title": m.title, "hook": m.hook,
                     "start": m.start, "end": m.end, "duration": res_i.duration,
-                    "result": res_i.to_dict(), "social_captions": self._social_captions(edl_i),
+                    "result": res_i.to_dict(), "social_captions": self._social_captions(edl_i, keys=keys),
                 })
                 self._update(job_id, progress=round(0.5 + 0.45 * (i + 1) / len(moments), 2))
             except Exception as exc:  # noqa: BLE001 - one bad clip must not kill the rest
@@ -469,16 +500,18 @@ class Worker:
             print("[worker] WARN: ai_spend table unreachable; using local JSON ledger", flush=True)
             return CostLedger(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_spend.json"), cap)
 
-    def _image_generator(self, quality: str = "standard"):
+    def _image_generator(self, quality: str = "standard", gemini_key: str | None = None, is_byok: bool = False):
         """Pick the best available, budget-capped generator: Imagen (Gemini key) →
-        Ideogram (key) → free stub. ``quality`` (fast|standard|ultra) picks the Imagen tier."""
+        Ideogram (key) → free stub. ``quality`` (fast|standard|ultra) picks the Imagen tier.
+        A BYOK user spends their own Gemini quota, so they skip the shared ai_spend cap (ledger=None)."""
         cap = float(os.environ.get("CADENCE_AI_BUDGET_USD", "10"))
-        ledger = self._ledger(cap)
-        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        ledger = None if is_byok else self._ledger(cap)
+        if gemini_key:
             from cadence.imagegen.imagen import QUALITY_MODELS, ImagenGenerator
 
-            gen = ImagenGenerator(model=QUALITY_MODELS.get(quality), ledger=ledger)
-            print(f"[worker] AI b-roll via Imagen ({gen.model} '{quality}' ${gen.cost_per_image}/img, budget ${cap:.2f}, spent ${ledger.spent():.2f})", flush=True)
+            gen = ImagenGenerator(model=QUALITY_MODELS.get(quality), api_key=gemini_key, ledger=ledger)
+            tag = "your key (byok)" if is_byok else f"shared budget ${cap:.2f}, spent ${ledger.spent():.2f}"
+            print(f"[worker] AI b-roll via Imagen ({gen.model} '{quality}' ${gen.cost_per_image}/img, {tag})", flush=True)
             return gen
         if os.environ.get("IDEOGRAM_API_KEY"):
             from cadence.imagegen.ideogram import IdeogramGenerator
@@ -490,18 +523,18 @@ class Worker:
         print("[worker] AI b-roll via free stub (no image key set)", flush=True)
         return StubGenerator()
 
-    def _distiller(self):
+    def _distiller(self, gemini_key: str | None = None):
         """Gemini scene/caption distiller when a key is present (an enhancement, not required)."""
-        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        if gemini_key:
             try:
                 from cadence.imagegen.distill import GeminiDistiller
 
-                return GeminiDistiller()
+                return GeminiDistiller(api_key=gemini_key)
             except Exception:  # noqa: BLE001 - degrade to lexical topic
                 return None
         return None
 
-    def _build_broll(self, edl, ctrl, brand, tmp: str):
+    def _build_broll(self, edl, ctrl, brand, tmp: str, keys=None):
         """Choose the b-roll source: AI-generated, uploaded/brand images, or none.
 
         ``ctrl`` is the :class:`ParsedControls` bundle — its cinematography drives the
@@ -509,6 +542,7 @@ class Worker:
         mode = ctrl.broll_mode
         if mode in ("none", "background"):
             return []
+        gkey, gbyok = (keys or {}).get("gemini", (None, False))
         uploaded = self._download_broll(ctrl.broll_paths, tmp)
         brand_imgs = self._download_brand_images(brand, tmp)
         pool = uploaded + brand_imgs
@@ -522,11 +556,11 @@ class Worker:
             words_out = remap_words_to_output(edl.transcript, list(edl.kept))
             try:
                 return build_ai_broll(
-                    words_out, edl.output_duration, self._image_generator(ctrl.broll_quality),
+                    words_out, edl.output_duration, self._image_generator(ctrl.broll_quality, gkey, gbyok),
                     out_dir=out_dir, mode=ctrl.pacing,
                     style_refs=(pool[:3] or None),  # brand/uploaded images steer the look
                     overlay_text=ctrl.broll_caption_overlay,
-                    distiller=self._distiller(),
+                    distiller=self._distiller(gkey),
                     cine=ctrl.cinematography,
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to images rather than fail the render
@@ -560,12 +594,13 @@ class Worker:
         cg.grain = float(ctrl.cinematography.film_grain_amount)
         plan.letterbox = ctrl.toggles.letterbox
 
-    def _background_image(self, edl, ctrl, brand, tmp: str) -> str | None:
+    def _background_image(self, edl, ctrl, brand, tmp: str, keys=None) -> str | None:
         """Pick the background to drop the speaker onto: an uploaded/brand image if
         provided, else one contextual AI background generated from the speech."""
         pool = self._download_broll(ctrl.broll_paths, tmp) + self._download_brand_images(brand, tmp)
         if pool:
             return pool[0]
+        gkey, gbyok = (keys or {}).get("gemini", (None, False))
         if edl.transcript and edl.transcript.words:
             from cadence.synthesis.contextual import build_ai_broll
             from cadence.synthesis.plan import remap_words_to_output
@@ -575,9 +610,9 @@ class Worker:
             words_out = remap_words_to_output(edl.transcript, list(edl.kept))
             try:
                 inserts = build_ai_broll(
-                    words_out, edl.output_duration, self._image_generator(),
+                    words_out, edl.output_duration, self._image_generator(ctrl.broll_quality, gkey, gbyok),
                     out_dir=out_dir, mode="natural", max_images=1,
-                    distiller=self._distiller(), cine=ctrl.cinematography,
+                    distiller=self._distiller(gkey), cine=ctrl.cinematography,
                 )
                 if inserts:
                     return inserts[0].image_path
@@ -585,7 +620,7 @@ class Worker:
                 print(f"[worker] bg image generation failed ({exc})", flush=True)
         return None
 
-    def _render_background_mode(self, edl, plan, ctrl, brand, tmp, out_path):
+    def _render_background_mode(self, edl, plan, ctrl, brand, tmp, out_path, keys=None):
         """Background-replacement render. Three passes are required because the matte
         keeps ONLY speaker pixels — burned-in captions/grade would be matted away — so:
           1) render the cut (cuts + zoom, neutral, no captions/wm/broll) → speaker on orig bg;
@@ -597,7 +632,7 @@ class Worker:
 
         from cadence.matte.replace import render_background_replaced
 
-        bg = self._background_image(edl, ctrl, brand, tmp)
+        bg = self._background_image(edl, ctrl, brand, tmp, keys)
         if bg is None:
             print("[worker] no background available; rendering without replacement", flush=True)
             return render_plan(plan, out_path, ff=self.ff)

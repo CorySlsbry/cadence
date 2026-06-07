@@ -22,6 +22,9 @@ export function TopNav({ email, used, limit }: { email: string; used: number; li
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
         </Link>
         <div className="flex items-center gap-4">
+          <Link href="/connections" className="hidden text-sm text-white/60 hover:text-white sm:inline">
+            Connections
+          </Link>
           <Badge tone={used >= limit ? "bad" : "accent"}>
             {used}/{limit} renders this month
           </Badge>
