@@ -42,3 +42,13 @@ maps to which talking point:
 
 The master copies of these screenshots also live in **Downloads** and **Google Drive**
 (the library the AI pulls from); this folder is the subset shipped into the render worker.
+
+## Master library (Google Drive)
+
+Canonical, editable copies of these screenshots live here:
+https://drive.google.com/drive/folders/1vM0bde-gznSY484krJPUOh5hJq3TNUcL
+
+The guardrail ships the BUNDLED copies in this folder (reliable, 0-latency, no Drive dependency).
+The Drive folder is the human source-of-truth library — refresh/add screenshots there, re-download
+into this folder with the manifest names, then rebuild the worker. (`library_drive_url` in
+manifest.json records the same link for tools/agents.)

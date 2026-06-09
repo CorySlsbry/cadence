@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "library_drive_url": "https://drive.google.com/drive/folders/1vM0bde-gznSY484krJPUOh5hJq3TNUcL",
   "description": "Factual-image guardrail map. When a talking point names one of these guarded terms, the AI b-roll pipeline shows the EXACT real screenshot named here instead of a generated (hallucinated) image — 100% accurate, 0 AI tokens. Edit freely: add an entry { key, asset_path, aliases, variant, alt } and drop the matching PNG next to this file. Filenames are the canonical naming cadence shared with the screenshot library (Downloads + Google Drive). Aliases are matched case-insensitively, on word boundaries, longest-phrase-first (so 'claude code' wins over a bare term). Entries whose PNG is not present yet are skipped automatically.",
   "assets": [
     {
