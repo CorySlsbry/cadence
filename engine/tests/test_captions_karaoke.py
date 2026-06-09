@@ -92,3 +92,11 @@ def test_parse_customization_caption_mode_is_reachable_via_api():
     assert parse_customization({"caption_mode": "karaoke"}).synthesis.caption_mode == "karaoke"
     assert parse_customization({}).synthesis.caption_mode == "legacy"
     assert parse_customization({"caption_mode": "bogus"}).synthesis.caption_mode == "legacy"  # invalid ignored
+
+
+def test_parse_customization_hook_card():
+    from cadence.customize import parse_customization
+
+    assert parse_customization({"hook": "  Stop scrolling  "}).hook == "Stop scrolling"  # trimmed
+    assert parse_customization({}).hook is None
+    assert parse_customization({"hook": "   "}).hook is None  # blank → no card

@@ -40,6 +40,7 @@ class ParsedControls:
     broll_paths: list[str] = field(default_factory=list)
     music_key: str | None = None        # uploaded music track storage key (worker downloads it)
     music_volume: float = 0.18          # base music level under speech (0..1)
+    hook: str | None = None             # opening hook-card text (animated overlay); None = no card
 
 
 def _b(d: dict, k: str, default: bool) -> bool:
@@ -135,4 +136,5 @@ def parse_customization(cust: dict[str, Any] | None) -> ParsedControls:
         broll_paths=list(merged.get("broll_paths") or []),
         music_key=merged.get("music_path"),
         music_volume=float(merged.get("music_volume", 0.18)),
+        hook=((merged.get("hook") or "").strip() or None),
     )

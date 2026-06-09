@@ -308,6 +308,8 @@ class Worker:
             if music_path:
                 plan.music_path = music_path
                 plan.music_volume = ctrl.music_volume
+            if ctrl.hook:
+                plan.hook = ctrl.hook
             self._update(job_id, progress=0.75)
 
             out_path = os.path.join(tmp, "final.mp4")
@@ -485,6 +487,8 @@ class Worker:
                 if music_path:
                     plan_i.music_path = music_path
                     plan_i.music_volume = ctrl.music_volume
+                if ctrl.hook:
+                    plan_i.hook = ctrl.hook
                 out_i = os.path.join(tmp, f"clip_{i}.mp4")
                 res_i = render_plan(plan_i, out_i, ff=self.ff)
                 key_i = f"{user_id}/{job_id}-clip{i}.mp4"

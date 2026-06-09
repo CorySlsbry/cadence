@@ -51,6 +51,8 @@ type ControlState = {
   captions: boolean;
   caption_style: "fade" | "pop";
   caption_zone: "top" | "center" | "bottom" | "auto";
+  caption_mode: "standard" | "karaoke";
+  hook: string;
   // BRAND
   watermark: boolean;
 };
@@ -86,6 +88,8 @@ const BASE: ControlState = {
   captions: true,
   caption_style: "pop",
   caption_zone: "bottom",
+  caption_mode: "standard",
+  hook: "",
   watermark: true,
 };
 
@@ -298,6 +302,8 @@ export function Studio({
       captions: ctl.captions,
       caption_style: ctl.caption_style,
       caption_zone: ctl.caption_zone,
+      caption_mode: ctl.caption_mode === "karaoke" ? "karaoke" : "legacy",
+      hook: ctl.hook.trim() || undefined,
       // BRAND
       watermark: ctl.watermark,
       // B-ROLL
@@ -650,6 +656,15 @@ export function Studio({
               <Segmented label="Position" value={ctl.caption_zone} disabled={!ctl.captions}
                 options={[["top", "Top"], ["center", "Center"], ["bottom", "Bottom"], ["auto", "Auto"]]}
                 onChange={(v) => update({ caption_zone: v as ControlState["caption_zone"] })} />
+              <Segmented label="Animation" value={ctl.caption_mode} disabled={!ctl.captions}
+                options={[["standard", "Standard"], ["karaoke", "Karaoke"]]}
+                onChange={(v) => update({ caption_mode: v as ControlState["caption_mode"] })} />
+              <div>
+                <Label>Hook card (opening line)</Label>
+                <input value={ctl.hook} onChange={(e) => update({ hook: e.target.value })}
+                  placeholder="Optional — a bold opener, e.g. Stop scrolling"
+                  className="min-h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm" />
+              </div>
             </Disclosure>
 
             {/* BRAND */}
