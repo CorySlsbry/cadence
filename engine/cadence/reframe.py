@@ -11,11 +11,20 @@ renderer falls back to the original center crop, so reframe can never break a re
 
 from __future__ import annotations
 
+import os
 import subprocess
+import urllib.request
 from typing import Callable
 
 from cadence.ffmpeg.probe import probe_media
 from cadence.ffmpeg.runner import FFmpeg
+
+# MediaPipe Tasks face detector (this build has no legacy mp.solutions API — same
+# Tasks pattern the selfie segmenter uses in matte/replace.py).
+_FACE_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/face_detector/"
+    "blaze_face_short_range/float16/latest/blaze_face_short_range.tflite"
+)
 
 
 def crop_filter(width: int, height: int, crop_x: float | None) -> str:
@@ -42,8 +51,32 @@ def aggregate_center(centers: list[float | None]) -> float | None:
     return min(1.0, max(0.0, med))
 
 
+def _ensure_face_model() -> str:
+    cache = os.path.join(os.path.expanduser("~"), ".cache", "cadence")
+    os.makedirs(cache, exist_ok=True)
+    path = os.path.join(cache, "blaze_face_short_range.tflite")
+    if not os.path.exists(path) or os.path.getsize(path) < 10000:
+        urllib.request.urlretrieve(_FACE_MODEL_URL, path)
+    return path
+
+
+def _make_face_detector():
+    """Tasks-API face detector + the mediapipe module (for mp.Image). Mirrors
+    matte/replace.py's segmenter so it works on this no-`solutions` mediapipe build."""
+    import mediapipe as mp
+    from mediapipe.tasks import python
+    from mediapipe.tasks.python import vision
+
+    opts = vision.FaceDetectorOptions(
+        base_options=python.BaseOptions(model_asset_path=_ensure_face_model()),
+        running_mode=vision.RunningMode.IMAGE,
+        min_detection_confidence=0.5,
+    )
+    return vision.FaceDetector.create_from_options(opts), mp
+
+
 def _box_area(det) -> float:
-    b = det.location_data.relative_bounding_box
+    b = det.bounding_box  # Tasks API: pixel-space BoundingBox(origin_x, origin_y, width, height)
     return max(0.0, b.width) * max(0.0, b.height)
 
 
@@ -52,7 +85,6 @@ def _sample_face_centers(src: str, ff: FFmpeg, *, samples: int, sample_w: int) -
     largest-face normalized x-center (``None`` when no face). Best-effort: [] on any error."""
     try:
         import numpy as np
-        import mediapipe as mp
 
         info = probe_media(src, ff)
         dur = max(info.duration, 0.1)
@@ -67,22 +99,22 @@ def _sample_face_centers(src: str, ff: FFmpeg, *, samples: int, sample_w: int) -
         assert proc.stdout is not None
         fsize = sample_w * sample_h * 3
         centers: list[float | None] = []
-        detector = mp.solutions.face_detection.FaceDetection(
-            model_selection=1, min_detection_confidence=0.5
-        )
+        detector, mp = _make_face_detector()
         try:
             while len(centers) < samples:
                 buf = proc.stdout.read(fsize)
                 if not buf or len(buf) < fsize:
                     break
-                frame = np.frombuffer(buf, dtype=np.uint8).reshape(sample_h, sample_w, 3)
-                res = detector.process(frame)
+                frame = np.ascontiguousarray(
+                    np.frombuffer(buf, dtype=np.uint8).reshape(sample_h, sample_w, 3)
+                )
+                res = detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=frame))
                 if not res.detections:
                     centers.append(None)
                     continue
                 best = max(res.detections, key=_box_area)
-                box = best.location_data.relative_bounding_box
-                centers.append(min(1.0, max(0.0, box.xmin + box.width / 2)))
+                bb = best.bounding_box  # pixels in the sampled frame
+                centers.append(min(1.0, max(0.0, (bb.origin_x + bb.width / 2) / float(sample_w))))
         finally:
             proc.stdout.close()
             proc.wait()
