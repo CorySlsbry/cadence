@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Button, Card, Label, Badge } from "@/components/ui";
 import { StickyActionBar } from "@/components/sticky-action-bar";
 import { formatDuration } from "@/lib/utils";
-import type { BrandBoard, Project, RenderJob } from "@/lib/types";
+import type { BrandBoard, Project, ProjectEdl, RenderJob } from "@/lib/types";
+import { edlWithKept, fmtTime, segmentsFromEdl } from "@/lib/edl-edit";
 import { Recorder } from "./recorder";
 import { SocialPanel } from "./social-panel";
 import { ClipsPanel, HooksPanel, RepurposePanel } from "./creator-panels";
@@ -126,7 +127,7 @@ export function Studio({
   const [boards, setBoards] = useState<BrandBoard[]>(initialBoards);
   const [boardId, setBoardId] = useState<string | null>(project.brand_board_id);
   const [tab, setTab] = useState<"record" | "upload">("record");
-  const [brollPaths, setBrollPaths] = useState<string[]>([]);
+  const [brollPaths, setBrollPaths] = useState<string[]>((project.broll_paths as string[] | null) ?? []);
   const [brollMode, setBrollMode] = useState<BrollMode>("ai");
   // Remember the last non-AI source so the Simple-mode AI toggle can restore it (not reset to Off).
   const [lastBrollMode, setLastBrollMode] = useState<BrollMode>("images");
@@ -269,6 +270,14 @@ export function Studio({
     }
   }
 
+  // Persist the project's b-roll image list so it survives reloads + is reused across renders.
+  const persistBroll = useCallback(async (paths: string[]) => {
+    setBrollPaths(paths);
+    try {
+      await supabase.from("projects").update({ broll_paths: paths }).eq("id", project.id);
+    } catch { /* non-fatal — keep the local list even if the save fails */ }
+  }, [supabase, project.id]);
+
   async function onBroll(files: FileList) {
     setError(null);
     setUploading("broll");
@@ -278,7 +287,7 @@ export function Studio({
         const path = await upload(f, "broll", f.name.split(".").pop() || "png");
         added.push(path);
       }
-      setBrollPaths((p) => [...p, ...added]);
+      await persistBroll([...brollPaths, ...added]);
     } catch (e) {
       setError(msg(e));
     } finally {
@@ -399,6 +408,28 @@ export function Studio({
     startPolling(data.jobId);
   }
 
+  // Re-render the same take with an edited cut list (drop segments) — skips re-cleaning.
+  async function fixRerender(edlOverride: ProjectEdl) {
+    if (!recordingPath) return;
+    setError(null);
+    setResultUrl(null);
+    const res = await fetch("/api/render", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        recordingPath,
+        referencePath,
+        aggressiveFillers: ctl.filler_aggressiveness >= 2,
+        customization: { ...buildCustomization(), edl_override: edlOverride },
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setError(data.error ?? "Could not start render"); return; }
+    setJob({ id: data.jobId, status: "queued", progress: 0 } as RenderJob);
+    startPolling(data.jobId);
+  }
+
   function startPolling(jobId: string) {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
@@ -503,7 +534,7 @@ export function Studio({
             </select>
             <Button variant="outline" onClick={createBoard}>＋ New</Button>
           </div>
-          {boardId && <BrandEditor boardId={boardId} userId={userId} onError={setError} />}
+          {boardId && <BrandEditor boardId={boardId} userId={userId} onError={setError} onBrollAdded={(paths) => void persistBroll([...brollPaths, ...paths])} />}
         </Card>
 
         {/* B-roll */}
@@ -553,7 +584,7 @@ export function Studio({
                     ? "Optional: a background image to use instead of a generated one."
                     : "Add screenshots/images — we animate them and cut to them over your voice."}
               </p>
-              <BrollUploader busy={uploading === "broll"} count={brollPaths.length} onFiles={onBroll} onClear={() => setBrollPaths([])} />
+              <BrollUploader busy={uploading === "broll"} count={brollPaths.length} onFiles={onBroll} onClear={() => void persistBroll([])} />
               {brollMode === "ai" && (
                 <label className="mt-3 flex items-center gap-2 text-sm text-white/60">
                   <input type="checkbox" checked={brollCaption} onChange={(e) => { setBrollCaption(e.target.checked); setPreset("custom"); }} />
@@ -844,6 +875,7 @@ export function Studio({
                     {job.result.width}×{job.result.height} · {Math.round(job.result.fps)}fps · {formatDuration(job.result.duration)}
                   </p>
                 )}
+                {job?.edl && <FixCutsPanel edl={job.edl} onReRender={fixRerender} />}
               </div>
             )}
             {job && <SocialPanel job={job} />}
@@ -988,7 +1020,37 @@ function Slider({ label, value, min, max, step, display, onChange, disabled }: {
   );
 }
 
-function BrandEditor({ boardId, userId, onError }: { boardId: string; userId: string; onError: (s: string) => void }) {
+function FixCutsPanel({ edl, onReRender }: { edl: ProjectEdl; onReRender: (edl: ProjectEdl) => void }) {
+  const segs = segmentsFromEdl(edl);
+  const [kept, setKept] = useState<Set<number>>(() => new Set(segs.map((s) => s.index)));
+  if (segs.length === 0) return null;
+  const toggle = (i: number) =>
+    setKept((prev) => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  const dropped = segs.length - kept.size;
+  return (
+    <details className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-left">
+      <summary className="cursor-pointer text-sm font-medium text-white/80">✂️ Fix cuts &amp; re-render</summary>
+      <p className="mt-2 text-xs text-white/45">Uncheck a segment to drop it, then re-render with your current settings — no re-cleaning.</p>
+      <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
+        {segs.map((s) => (
+          <label key={s.index} className={`flex gap-2 rounded-lg px-2 py-1.5 text-sm ${kept.has(s.index) ? "" : "opacity-40 line-through"}`}>
+            <input type="checkbox" checked={kept.has(s.index)} onChange={() => toggle(s.index)} className="mt-1" />
+            <span className="shrink-0 tabular-nums text-white/40">{fmtTime(s.start)}–{fmtTime(s.end)}</span>
+            <span className="text-white/70">{s.text || <em className="text-white/30">(no speech)</em>}</span>
+          </label>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <Button disabled={kept.size === 0} onClick={() => onReRender(edlWithKept(edl, [...kept].sort((a, b) => a - b)))}>
+          Re-render{dropped > 0 ? ` (drop ${dropped})` : ""}
+        </Button>
+        {dropped > 0 && <span className="text-xs text-white/40">{dropped} segment{dropped > 1 ? "s" : ""} dropped</span>}
+      </div>
+    </details>
+  );
+}
+
+function BrandEditor({ boardId, userId, onError, onBrollAdded }: { boardId: string; userId: string; onError: (s: string) => void; onBrollAdded?: (paths: string[]) => void }) {
   const supabase = createClient();
   const ref = useRef<HTMLInputElement>(null);
   const trRef = useRef<HTMLInputElement>(null);
@@ -999,6 +1061,7 @@ function BrandEditor({ boardId, userId, onError }: { boardId: string; userId: st
 
   async function onTransitions(files: FileList) {
     try {
+      const added: string[] = [];
       for (const f of Array.from(files)) {
         const ext = f.name.split(".").pop() || "png";
         const path = `${userId}/brand/${boardId}-tr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
@@ -1008,8 +1071,10 @@ function BrandEditor({ boardId, userId, onError }: { boardId: string; userId: st
           board_id: boardId, user_id: userId, kind: "transition", name: f.name,
           storage_path: path, anchor: "center", opacity: 1.0, scale: 1.0,
         });
+        added.push(path);
       }
       setTrCount((c) => c + files.length);
+      if (added.length) onBrollAdded?.(added);  // also save to the project's b-roll so it persists + is used
     } catch (e) {
       onError(msg(e));
     }

@@ -260,14 +260,22 @@ class Worker:
             if job.get("transcript"):
                 transcript = Transcript.from_dict(job["transcript"])
 
-            edl = clean_recording(
-                recording,
-                transcript=transcript,
-                transcriber=None if transcript else self._get_transcriber(),
-                cfg=ctrl.cleaning,
-                ff=self.ff,
-            )
-            self._update(job_id, progress=0.6)
+            override = (job.get("customization") or {}).get("edl_override")
+            if override:
+                # Fix-and-re-render: use the user's edited cut list instead of re-cleaning.
+                from cadence.models import EditDecisionList
+                edl = EditDecisionList.from_dict(override)
+                print(f"[worker] job {job_id} edl_override -> {len(edl.kept)} kept spans (fix re-render)", flush=True)
+            else:
+                edl = clean_recording(
+                    recording,
+                    transcript=transcript,
+                    transcriber=None if transcript else self._get_transcriber(),
+                    cfg=ctrl.cleaning,
+                    ff=self.ff,
+                )
+            # Persist the EDL so the result screen can re-edit the cuts and re-render.
+            self._update(job_id, progress=0.6, edl=edl.to_dict())
 
             brand = self._load_brand(job.get("project_id"), user_id, tmp)
 

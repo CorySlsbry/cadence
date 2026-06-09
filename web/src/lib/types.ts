@@ -15,6 +15,7 @@ export type Project = {
   reference_path: string | null;
   reference_analysis: ReferenceAnalysis | null;
   brand_board_id: string | null;
+  broll_paths: string[] | null;
   created_at: string;
 };
 
@@ -67,9 +68,17 @@ export type RenderJob = {
   hooks: Hooks | null;
   repurpose: Repurpose | null;
   clips: ClipResult[] | null;
+  edl: ProjectEdl | null;
   error: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ProjectEdl = {
+  source: string;
+  source_duration: number;
+  kept: { start: number; end: number; duration?: number }[];
+  transcript?: { words?: { text: string; start: number; end: number }[] } | null;
 };
 
 export type ReferenceAnalysis = {
