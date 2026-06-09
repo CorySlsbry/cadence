@@ -507,11 +507,13 @@ class Worker:
                 clips.append({
                     "index": i, "output_path": key_i, "title": m.title, "hook": m.hook,
                     "start": m.start, "end": m.end, "duration": res_i.duration,
+                    "score": m.score, "reason": m.reason,
                     "result": res_i.to_dict(), "social_captions": self._social_captions(edl_i, keys=keys),
                 })
                 self._update(job_id, progress=round(0.5 + 0.45 * (i + 1) / len(moments), 2))
             except Exception as exc:  # noqa: BLE001 - one bad clip must not kill the rest
                 print(f"[worker] multiclip clip {i} failed ({exc})", flush=True)
+        clips.sort(key=lambda c: c.get("score", 0), reverse=True)  # best clip first → clips[0] = primary output
         return clips or None
 
     def _load_brand(self, project_id: str | None, user_id: str, tmp: str) -> BrandBoard | None:

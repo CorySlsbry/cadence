@@ -38,19 +38,27 @@ export function ClipsPanel({ job }: { job: RenderJob }) {
   if (!job.clips?.length) return null;
   return (
     <div className="mx-auto max-w-2xl space-y-3 text-left">
-      <h3 className="text-sm font-semibold">{job.clips.length} clips from your recording</h3>
+      <h3 className="text-sm font-semibold">{job.clips.length} clips — ranked by potential</h3>
+      <p className="text-xs text-white/45">Best clip first. Score = our honest estimate of short-form potential (hook + payoff + clarity).</p>
       <div className="grid gap-4 sm:grid-cols-2">
-        {job.clips.map((c) => (
+        {job.clips.map((c, rank) => (
           <div key={c.index} className="space-y-2">
             {urls[c.index] ? (
               <video src={urls[c.index]} controls playsInline className="aspect-[9/16] w-full rounded-xl border border-white/10 bg-black" />
             ) : (
               <div className="aspect-[9/16] w-full animate-pulse rounded-xl bg-white/5" />
             )}
-            <div className="text-xs"><span className="font-medium">{c.title || `Clip ${c.index + 1}`}</span> · {Math.round(c.duration)}s</div>
-            {c.hook && <p className="text-xs text-white/45">{c.hook}</p>}
+            <div className="flex items-center gap-2 text-xs">
+              {typeof c.score === "number" && (
+                <span className="shrink-0 rounded-full bg-[var(--accent)]/20 px-2 py-0.5 font-semibold text-[var(--accent)]">{c.score}</span>
+              )}
+              <span className="font-medium">{c.title || `Clip ${rank + 1}`}</span>
+              <span className="text-white/40">· {Math.round(c.duration)}s</span>
+            </div>
+            {c.reason && <p className="text-xs text-white/55">{c.reason}</p>}
+            {c.hook && <p className="text-xs text-white/40">Hook: {c.hook}</p>}
             {urls[c.index] && (
-              <a href={urls[c.index]} download={`cadence-clip-${c.index + 1}.mp4`}>
+              <a href={urls[c.index]} download={`clouthook-clip-${rank + 1}.mp4`}>
                 <Button variant="outline" className="w-full">Download</Button>
               </a>
             )}

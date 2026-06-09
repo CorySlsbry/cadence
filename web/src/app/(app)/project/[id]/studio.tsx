@@ -793,12 +793,12 @@ export function Studio({
       <Card>
         <SectionHead n="6" title="Clips & music" done={multiclip || !!musicPath} />
         <div className="space-y-4">
-          <Toggle label="Split into multiple clips"
-            hint="Find the best moments in a longer recording and render several standalone shorts"
+          <Toggle label="Auto-clip a long video"
+            hint="Upload a long video (podcast, stream, webinar) — we find the best moments and render each as a ranked, studio-grade short."
             checked={multiclip} onChange={setMulticlip} />
           {multiclip && (
             <Segmented label="How many clips" value={String(multiclipCount)}
-              options={[["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"]]}
+              options={[["3", "3"], ["4", "4"], ["5", "5"], ["6", "6"], ["8", "8"], ["10", "10"]]}
               onChange={(v) => setMulticlipCount(Number(v))} />
           )}
           <div>

@@ -50,6 +50,8 @@ export type ClipResult = {
   start: number;
   end: number;
   duration: number;
+  score?: number;   // 0-100 clip-worthiness (clips are returned best-first)
+  reason?: string;  // one-line "why this clips"
   result: RenderResult | null;
   social_captions: SocialCaptions | null;
 };

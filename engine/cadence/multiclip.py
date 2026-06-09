@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-MAX_CLIPS = 5
+MAX_CLIPS = 10
 MIN_CLIP_SEC = 8.0
 MAX_CLIP_SEC = 90.0
 
@@ -24,17 +24,23 @@ class ClipMoment:
     end: float
     title: str
     hook: str
+    score: int = 0       # 0-100 estimated clip-worthiness (the honest, explainable anti-virality-score)
+    reason: str = ""     # one-line "why this clips"
 
     @property
     def duration(self) -> float:
         return round(self.end - self.start, 3)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"start": self.start, "end": self.end, "title": self.title, "hook": self.hook}
+        return {"start": self.start, "end": self.end, "title": self.title, "hook": self.hook,
+                "score": self.score, "reason": self.reason}
 
 
-def _timestamped(transcript, max_chars: int = 8000) -> str:
-    """Render the transcript as `[12.3] sentence…` lines so the LLM can pick time ranges."""
+def _timestamped(transcript, max_chars: int = 24000) -> str:
+    """Render the transcript as `[12.3] sentence…` lines so the LLM can pick time ranges.
+
+    For LONG videos (podcasts/streams), evenly SAMPLE lines across the whole runtime instead of
+    hard-truncating the head — otherwise clip moments could only ever come from the first minutes."""
     words = list(getattr(transcript, "words", []) or [])
     lines: list[str] = []
     buf: list[str] = []
@@ -49,16 +55,22 @@ def _timestamped(transcript, max_chars: int = 8000) -> str:
     if buf and start is not None:
         lines.append(f"[{start:.1f}] {' '.join(buf)}")
     text = "\n".join(lines)
-    return text[:max_chars]
+    if len(text) <= max_chars or not lines:
+        return text
+    import math
+    k = math.ceil(len(text) / max_chars)        # keep ~every Kth line → coverage spans the whole video
+    return "\n".join(lines[::k])[:max_chars]
 
 
 _PROMPT = """You are a short-form video editor. Below is a TIMESTAMPED transcript (each line starts \
 with its [start-second]) of a {dur:.0f}-second video. Identify the BEST up to {n} self-contained \
 moments to cut into standalone vertical shorts — each a complete thought with a strong hook and a payoff.
 
-Return STRICT JSON: {{"clips": [{{"start": <sec>, "end": <sec>, "title": "...", "hook": "..."}}]}}
+Return STRICT JSON: {{"clips": [{{"start": <sec>, "end": <sec>, "title": "...", "hook": "...", "score": <0-100>, "reason": "..."}}]}}
 Rules: each clip {min:.0f}-{max:.0f}s long; non-overlapping; ordered by start; `start`/`end` are seconds \
-within the video; `title` = 3-6 word label; `hook` = the punchy opening line. JSON only, no preamble."""
+within the video; `title` = 3-6 word label; `hook` = the punchy opening line; `score` = 0-100 honest estimate \
+of how well it will perform as a standalone short (hook strength + payoff + standalone clarity); `reason` = \
+one short sentence on why it works. JSON only, no preamble."""
 
 
 def normalize_moments(raw: dict[str, Any], duration: float, *, max_clips: int = MAX_CLIPS,
@@ -78,7 +90,12 @@ def normalize_moments(raw: dict[str, Any], duration: float, *, max_clips: int = 
             e = round(s + max_sec, 3)
         title = " ".join(str(c.get("title", "") or "").split())[:60]
         hook = " ".join(str(c.get("hook", "") or "").split())[:120]
-        cand.append(ClipMoment(round(s, 3), round(e, 3), title, hook))
+        try:
+            score = max(0, min(100, int(round(float(c.get("score", 50))))))
+        except (TypeError, ValueError):
+            score = 50
+        reason = " ".join(str(c.get("reason", "") or "").split())[:160]
+        cand.append(ClipMoment(round(s, 3), round(e, 3), title, hook, score, reason))
     cand.sort(key=lambda m: m.start)
     out: list[ClipMoment] = []
     last_end = -1.0
