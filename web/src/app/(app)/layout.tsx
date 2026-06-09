@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { TopNav } from "@/components/top-nav";
+import { FeedbackWidget } from "@/components/feedback-widget";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -16,6 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-screen flex-col">
       <TopNav email={user.email ?? ""} tokens={(tokens as number) ?? 0} />
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
+      <FeedbackWidget />
     </div>
   );
 }
