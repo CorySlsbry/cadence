@@ -23,6 +23,7 @@ class RenderToggles:
     ai_broll: bool = True
     letterbox: bool = False
     background_replace: bool = False  # composite speaker over b-roll instead of cutaways
+    auto_reframe: bool = False        # landscape source → face-tracked 9:16 crop (vs naive center)
 
 
 @dataclass(slots=True)
@@ -123,6 +124,7 @@ def parse_customization(cust: dict[str, Any] | None) -> ParsedControls:
         ai_broll=_b(merged, "ai_broll", True),
         letterbox=(merged.get("framing") == "letterbox_239") or _b(merged, "letterbox", False),
         background_replace=(broll_mode == "background"),
+        auto_reframe=_b(merged, "auto_reframe", False),
     )
 
     return ParsedControls(

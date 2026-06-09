@@ -21,6 +21,7 @@ from cadence.ffmpeg.builder import (
 )
 from cadence.ffmpeg.probe import probe_media
 from cadence.ffmpeg.runner import FFmpeg
+from cadence.reframe import crop_filter
 from cadence.models import Anchor, GenerationPlan, RGBColor, RenderResult
 from cadence.synthesis.captions import build_ass, build_ass_karaoke, build_hook_studio
 
@@ -28,7 +29,8 @@ from cadence.synthesis.captions import build_ass, build_ass_karaoke, build_hook_
 def _clip_video_chain(clip, idx: int, src_idx: int, w: int, h: int, fps: int) -> str:
     chain = (
         f"[{src_idx}:v]trim={clip.in_point:.4f}:{clip.out_point:.4f},setpts=PTS-STARTPTS,"
-        f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={fps},setsar=1"
+        f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+        f"{crop_filter(w, h, getattr(clip, 'crop_x', None))},fps={fps},setsar=1"
     )
     if clip.zoom > 1.0:
         ramp = max(clip.duration, 0.5)

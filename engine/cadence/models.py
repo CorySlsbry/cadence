@@ -564,6 +564,7 @@ class ClipSpec:
     zoom: float = 1.0                 # 1.0 = none; 1.1-1.15 = smart punch-in
     transition_in: TransitionType = TransitionType.HARD_CUT
     transition_dur: float = 0.0
+    crop_x: float | None = None       # subject's normalized x-center for landscape→9:16 reframe; None = centered
 
     @property
     def duration(self) -> float:
@@ -578,10 +579,12 @@ class ClipSpec:
             "zoom": self.zoom,
             "transition_in": self.transition_in.value,
             "transition_dur": self.transition_dur,
+            "crop_x": self.crop_x,
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ClipSpec":
+        cx = d.get("crop_x")
         return cls(
             source=d["source"],
             in_point=float(d["in_point"]),
@@ -589,6 +592,7 @@ class ClipSpec:
             zoom=float(d.get("zoom", 1.0)),
             transition_in=TransitionType(d.get("transition_in", "hard_cut")),
             transition_dur=float(d.get("transition_dur", 0.0)),
+            crop_x=None if cx is None else float(cx),
         )
 
 

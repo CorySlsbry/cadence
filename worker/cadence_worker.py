@@ -310,6 +310,9 @@ class Worker:
             else:
                 plan = build_generation_plan(edl, analysis=analysis, brand=brand, cfg=ctrl.synthesis)
                 self._apply_cinematography(plan, ctrl)
+                if ctrl.toggles.auto_reframe and not ctrl.toggles.background_replace:
+                    from cadence.reframe import apply_auto_reframe
+                    apply_auto_reframe(plan, self.ff)  # landscape → face-tracked 9:16 (no-op on portrait)
                 if not ctrl.toggles.background_replace:
                     plan.broll = self._build_broll(edl, ctrl, brand, tmp, keys)
                 if not ctrl.toggles.captions:
@@ -489,6 +492,9 @@ class Worker:
                 edl_i = clean_recording(sub, transcriber=self._get_transcriber(), cfg=ctrl.cleaning, ff=self.ff)
                 plan_i = build_generation_plan(edl_i, analysis=analysis, brand=brand, cfg=ctrl.synthesis)
                 self._apply_cinematography(plan_i, ctrl)
+                if ctrl.toggles.auto_reframe and not ctrl.toggles.background_replace:
+                    from cadence.reframe import apply_auto_reframe
+                    apply_auto_reframe(plan_i, self.ff)  # per-moment face track for landscape→9:16 shorts
                 if not ctrl.toggles.background_replace:
                     plan_i.broll = self._build_broll(edl_i, ctrl, brand, tmp, keys)
                 if not ctrl.toggles.captions:

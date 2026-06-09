@@ -137,6 +137,7 @@ export function Studio({
   const [pacing, setPacing] = useState<"natural" | "between" | "match">("between");
   const [multiclip, setMulticlip] = useState(false);
   const [multiclipCount, setMulticlipCount] = useState(4);
+  const [autoReframe, setAutoReframe] = useState(false);
   const [musicPath, setMusicPath] = useState<string | null>(null);
   const [musicVolume, setMusicVolume] = useState(0.18);
 
@@ -197,7 +198,7 @@ export function Studio({
   async function saveTemplate() {
     const name = window.prompt("Name this template (saves your current settings):")?.trim();
     if (!name) return;
-    const snapshot = { ctl, preset, pacing, brollMode, brollQuality, brollCaption, bgDynamic, multiclip, multiclipCount };
+    const snapshot = { ctl, preset, pacing, brollMode, brollQuality, brollCaption, bgDynamic, multiclip, multiclipCount, autoReframe };
     try {
       const r = await fetch("/api/templates", {
         method: "POST",
@@ -219,6 +220,7 @@ export function Studio({
     if (typeof c.bgDynamic === "boolean") setBgDynamic(c.bgDynamic);
     if (typeof c.multiclip === "boolean") setMulticlip(c.multiclip);
     if (typeof c.multiclipCount === "number") setMulticlipCount(c.multiclipCount);
+    if (typeof c.autoReframe === "boolean") setAutoReframe(c.autoReframe);
   }
 
   async function deleteTemplate(id: string) {
@@ -366,6 +368,7 @@ export function Studio({
       broll_caption: brollCaption,
       ai_broll: brollMode === "ai" || (brollMode === "background" && bgDynamic),
       pacing,
+      auto_reframe: autoReframe,
       ...(multiclip ? { multiclip: { count: multiclipCount } } : {}),
       ...(musicPath ? { music_path: musicPath, music_volume: musicVolume } : {}),
       ...(isAdmin && voiceover.trim() ? { voiceover: { script: voiceover.trim() } } : {}),
@@ -801,6 +804,9 @@ export function Studio({
               options={[["3", "3"], ["4", "4"], ["5", "5"], ["6", "6"], ["8", "8"], ["10", "10"]]}
               onChange={(v) => setMulticlipCount(Number(v))} />
           )}
+          <Toggle label="Auto-reframe widescreen to 9:16"
+            hint="Landscape source (16:9 webcam, podcast, screen recording)? We track the speaker's face and crop vertically so they stay centered — instead of a blind center crop. No effect on portrait video."
+            checked={autoReframe} onChange={setAutoReframe} />
           <div>
             <Label>Background music (optional)</Label>
             <div className="flex items-center gap-2">
