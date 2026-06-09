@@ -263,8 +263,11 @@ class Worker:
             override = (job.get("customization") or {}).get("edl_override")
             if override:
                 # Fix-and-re-render: use the user's edited cut list instead of re-cleaning.
+                # The persisted EDL's `source` is a stale per-run tmp path → repoint it at THIS
+                # run's freshly-downloaded recording, or render_plan can't find the clip source.
+                import dataclasses
                 from cadence.models import EditDecisionList
-                edl = EditDecisionList.from_dict(override)
+                edl = dataclasses.replace(EditDecisionList.from_dict(override), source=recording)
                 print(f"[worker] job {job_id} edl_override -> {len(edl.kept)} kept spans (fix re-render)", flush=True)
             else:
                 edl = clean_recording(
