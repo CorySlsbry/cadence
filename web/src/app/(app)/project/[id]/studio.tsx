@@ -183,6 +183,50 @@ export function Studio({
     setPreset("custom");
   }
 
+  // -- templates (saved render presets) --------------------------------- //
+  const [templates, setTemplates] = useState<{ id: string; name: string; customization: Record<string, unknown> }[]>([]);
+  const loadTemplates = useCallback(async () => {
+    try {
+      const r = await fetch("/api/templates");
+      if (r.ok) setTemplates((await r.json()).templates ?? []);
+    } catch { /* non-fatal */ }
+  }, []);
+  useEffect(() => { void loadTemplates(); }, [loadTemplates]);
+
+  async function saveTemplate() {
+    const name = window.prompt("Name this template (saves your current settings):")?.trim();
+    if (!name) return;
+    const snapshot = { ctl, preset, pacing, brollMode, brollQuality, brollCaption, bgDynamic, multiclip, multiclipCount };
+    try {
+      const r = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, customization: snapshot }),
+      });
+      if (!r.ok) { setError("Couldn't save template."); return; }
+      await loadTemplates();
+    } catch { setError("Couldn't save template."); }
+  }
+
+  function loadTemplate(c: Record<string, unknown>) {
+    if (c.ctl && typeof c.ctl === "object") setCtl({ ...BASE, ...(c.ctl as Partial<ControlState>) });
+    if (typeof c.preset === "string") setPreset(c.preset as PresetName);
+    if (typeof c.pacing === "string") setPacing(c.pacing as "natural" | "between" | "match");
+    if (typeof c.brollMode === "string") setBrollMode(c.brollMode as BrollMode);
+    if (typeof c.brollQuality === "string") setBrollQuality(c.brollQuality as "fast" | "standard" | "ultra");
+    if (typeof c.brollCaption === "boolean") setBrollCaption(c.brollCaption);
+    if (typeof c.bgDynamic === "boolean") setBgDynamic(c.bgDynamic);
+    if (typeof c.multiclip === "boolean") setMulticlip(c.multiclip);
+    if (typeof c.multiclipCount === "number") setMulticlipCount(c.multiclipCount);
+  }
+
+  async function deleteTemplate(id: string) {
+    try {
+      await fetch(`/api/templates?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      await loadTemplates();
+    } catch { /* non-fatal */ }
+  }
+
   // -- uploads ----------------------------------------------------------- //
   const upload = useCallback(
     async (file: Blob, kind: string, ext: string) => {
@@ -553,6 +597,26 @@ export function Studio({
               <span className="rounded-full border border-white/15 px-4 py-2 text-sm text-white/50">Custom</span>
             )}
           </div>
+        </div>
+
+        {/* Templates — your saved settings */}
+        <div className="mb-6">
+          <div className="mb-1 flex items-center justify-between">
+            <Label>Templates</Label>
+            <button onClick={saveTemplate} className="text-xs text-[var(--accent)] hover:underline">＋ Save current</button>
+          </div>
+          {templates.length === 0 ? (
+            <p className="text-sm text-white/40">No saved templates yet. Set things up, then &quot;Save current&quot; to reuse them.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {templates.map((t) => (
+                <span key={t.id} className="flex items-center gap-1 rounded-full border border-white/10 py-1 pl-4 pr-1 text-sm text-white/70 hover:text-white">
+                  <button onClick={() => loadTemplate(t.customization)} className="py-1">{t.name}</button>
+                  <button onClick={() => deleteTemplate(t.id)} title="Delete template" className="rounded-full px-2 text-white/30 hover:text-white">×</button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {mode === "simple" ? (
