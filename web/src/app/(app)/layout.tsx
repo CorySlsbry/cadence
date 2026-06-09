@@ -9,20 +9,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("monthly_render_limit")
-    .eq("id", user.id)
-    .single();
-  const { data: used } = await supabase.rpc("renders_used_this_month", { uid: user.id });
+  // claim_monthly_tokens resets the grant when a new month starts and returns the current balance
+  const { data: tokens } = await supabase.rpc("claim_monthly_tokens");
 
   return (
     <div className="flex min-h-screen flex-col">
-      <TopNav
-        email={user.email ?? ""}
-        used={(used as number) ?? 0}
-        limit={profile?.monthly_render_limit ?? 10}
-      />
+      <TopNav email={user.email ?? ""} tokens={(tokens as number) ?? 0} />
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
     </div>
   );

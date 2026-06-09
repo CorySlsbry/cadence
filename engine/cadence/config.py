@@ -85,6 +85,7 @@ class SynthesisConfig:
     caption_fade_sec: float = 0.20          # 200ms alpha blend
     caption_default_zone: str = "bottom"
     caption_default_style: str = "fade"
+    caption_mode: str = "legacy"            # "legacy" = per-line | "karaoke" = per-word scale-pop captions
     audio_crossfade_ms: int = 18            # feather each cut seam so jumps aren't abrupt (0 = hard cut)
     # Encoder.
     prefer_hardware: bool = True

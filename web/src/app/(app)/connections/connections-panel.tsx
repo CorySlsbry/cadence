@@ -117,27 +117,76 @@ function ProviderCard({ provider, status }: { provider: Provider; status?: ConnS
 }
 
 function BlotatoCard({ connected }: { connected: boolean }) {
+  const router = useRouter();
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [justConnected, setJustConnected] = useState<number | null>(null);
+
+  async function connect() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/social/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ apiKey: key }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not connect");
+      setKey("");
+      setJustConnected((json.accounts ?? []).length);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not connect");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isConnected = connected || justConnected !== null;
+
   return (
     <Card className="flex flex-col">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="font-semibold">Social posting (Blotato)</h3>
-        {connected ? <Badge tone="good">Connected</Badge> : <Badge tone="accent">Not connected</Badge>}
+        {isConnected ? <Badge tone="good">Connected</Badge> : <Badge tone="accent">Not connected</Badge>}
       </div>
       <p className="mb-3 text-sm text-white/45">
-        Auto-post finished videos to TikTok, YouTube &amp; Instagram. Blotato handles each
-        platform&apos;s login — you connect your socials inside Blotato.
+        Auto-post finished videos to TikTok, YouTube &amp; Instagram in one click. Connect your socials
+        inside Blotato, then paste your Blotato API key here — one key posts to all three.
       </p>
-      <div className="mt-auto flex items-center gap-3">
-        <a
-          href="https://my.blotato.com/settings"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-[var(--accent)] hover:underline"
-        >
-          Connect socials in Blotato ↗
-        </a>
-        <span className="ml-auto text-xs text-white/35">Add your Blotato key on a project&apos;s publish panel</span>
-      </div>
+      {isConnected ? (
+        <div className="mt-auto flex items-center gap-3">
+          <span className="text-xs text-white/35">
+            Blotato key saved{justConnected !== null ? ` · ${justConnected} account(s) connected` : ""}.
+          </span>
+          <a href="https://my.blotato.com/settings" target="_blank" rel="noopener noreferrer"
+            className="ml-auto text-xs text-[var(--accent)] hover:underline">
+            Manage socials in Blotato ↗
+          </a>
+        </div>
+      ) : (
+        <div className="mt-auto space-y-2">
+          <Input
+            type="password"
+            placeholder="Paste your Blotato API key (blt_…)"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            autoComplete="off"
+          />
+          <div className="flex items-center gap-3">
+            <a href="https://my.blotato.com/settings" target="_blank" rel="noopener noreferrer"
+              className="text-xs text-[var(--accent)] hover:underline">
+              Get your key: Blotato → Settings → API ↗
+            </a>
+            <Button onClick={connect} disabled={busy || key.trim().length < 10} className="ml-auto">
+              {busy ? "Validating…" : "Connect"}
+            </Button>
+          </div>
+          {error && <p className="text-xs text-red-300">{error}</p>}
+        </div>
+      )}
     </Card>
   );
 }

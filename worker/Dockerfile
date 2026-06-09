@@ -10,8 +10,11 @@ ENV PYTHONUNBUFFERED=1 \
     CADENCE_WHISPER_MODEL=medium.en
 
 # ffmpeg (built with libx264 + libass on Debian) and the shared libs MediaPipe needs.
+# MediaPipe loads libGLESv2.so.2 + libEGL.so.1 lazily the first time a graph runs (e.g.
+# face/segmentation passes), so libgl1 alone isn't enough — without libgles2/libegl1 the
+# render dies with "libGLESv2.so.2: cannot open shared object file".
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg libgl1 libglib2.0-0 \
+      ffmpeg libgl1 libglib2.0-0 libgles2 libegl1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

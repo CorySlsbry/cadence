@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -13,10 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cadence — Studio-grade short-form video, from one raw take",
+  title: "CloutHook — Studio-grade short-form video, from one raw take",
   description:
-    "Analyze a reference, record once, and let Cadence clean and stitch a premium 1080×1920 vertical video that matches its style.",
+    "Analyze a reference, record once, and let CloutHook clean and stitch a premium 1080×1920 vertical video that matches its style.",
 };
+
+export const viewport: Viewport = { themeColor: "#07060c" };
 
 export default function RootLayout({
   children,

@@ -2,9 +2,11 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
+import { UpgradeButton } from "@/components/upgrade-button";
 
 const PILLARS = [
-  { k: "01", t: "One raw take", d: "Talk straight through your mistakes. Cadence keeps the takes that land and removes everything else — automatically." },
+  { k: "01", t: "One raw take", d: "Talk straight through your mistakes. CloutHook keeps the takes that land and removes everything else — automatically." },
   { k: "02", t: "Word-level auto-clean", d: "Silence, filler words, and repeated takes are detected at the word and cut out, with seams feathered so nothing pops." },
   { k: "03", t: "AI b-roll that knows your words", d: "Photoreal cutaways generated from what you're actually saying — say “Claude skills” and the frame renders it." },
   { k: "04", t: "Background replacement", d: "Lift yourself off your real background and drop onto a contextual scene. No green screen, no setup." },
@@ -21,35 +23,29 @@ const STEPS = [
 
 const TIERS = [
   {
-    name: "Starter", price: "$0", cadence: "free forever", credits: "60 credits to start",
+    name: "Free", price: "$0", cadence: "free forever", credits: "25 tokens to start",
     blurb: "Taste the studio.",
-    features: ["~5 AI videos", "Unlimited clean edits", "1080p · 60fps", "Teleprompter", "Cadence watermark"],
-    cta: "Start free", href: "/signup", highlight: false,
+    features: ["~5 AI scenes", "Unlimited clean edits", "1080p · 60fps", "Teleprompter", "CloutHook watermark"],
+    cta: "Start free", href: "/signup", plan: null, highlight: false,
   },
   {
-    name: "Creator", price: "$39", cadence: "/ month", credits: "250 credits / mo",
+    name: "Base", price: "$30", cadence: "/ month", credits: "200 tokens / mo",
     blurb: "For the consistent creator.",
-    features: ["~22 AI-video minutes / mo", "Unlimited clean edits", "No watermark", "All cinematography controls", "Background replacement", "Brand kit"],
-    cta: "Go Creator", href: "/signup?plan=creator", highlight: false,
+    features: ["200 AI scenes / mo", "Unlimited clean edits", "No watermark", "All cinematography controls", "Background replacement", "Brand kit"],
+    cta: "Go Base", href: "/signup?plan=base", plan: "base", highlight: false,
   },
   {
-    name: "Pro", price: "$99", cadence: "/ month", credits: "800 credits / mo",
+    name: "Creator", price: "$79", cadence: "/ month", credits: "560 tokens / mo",
     blurb: "For the daily publisher.",
-    features: ["~70 AI-video minutes / mo", "Priority render queue", "Ultra image quality", "Everything in Creator", "Reference-match styling"],
-    cta: "Go Pro", href: "/signup?plan=pro", highlight: true,
-  },
-  {
-    name: "Studio", price: "$299", cadence: "/ month", credits: "3,000 credits / mo",
-    blurb: "For teams & agencies.",
-    features: ["~270 AI-video minutes / mo", "3 seats included", "API access", "Fastest queue", "Priority support"],
-    cta: "Talk to us", href: "/signup?plan=studio", highlight: false,
+    features: ["560 AI scenes / mo", "Priority render queue", "Ultra image quality", "Everything in Base", "Reference-match styling"],
+    cta: "Go Creator", href: "/signup?plan=creator", plan: "creator", highlight: true,
   },
 ];
 
 const FAQ = [
-  { q: "Do I need editing skills?", a: "No. You record one raw take; Cadence does the cutting, captioning, b-roll, grading, and stitching. If you can talk to a camera, you can ship." },
+  { q: "Do I need editing skills?", a: "No. You record one raw take; CloutHook does the cutting, captioning, b-roll, grading, and stitching. If you can talk to a camera, you can ship." },
   { q: "What exactly is a credit?", a: "One credit generates one AI scene (a photoreal b-roll image). Clean edits — cuts, captions, zoom, color — are always unlimited and cost zero credits. Credits only meter AI generation." },
-  { q: "Can I match a specific creator's look?", a: "Yes. Drop in a reference clip and Cadence maps its palette, cut timing, caption zones, and pacing, then stitches your footage to match the feel." },
+  { q: "Can I match a specific creator's look?", a: "Yes. Drop in a reference clip and CloutHook maps its palette, cut timing, caption zones, and pacing, then stitches your footage to match the feel." },
   { q: "Will I get a surprise bill from heavy AI use?", a: "Never. Your credit balance is a hard cap, enforced server-side. When credits run out, the render still completes as a clean edit — you are never billed past your plan." },
   { q: "Is my footage private?", a: "Every account is fully isolated at the database and storage layer. Your recordings and renders live in your own space and are never shared across accounts." },
   { q: "Can I cancel anytime?", a: "Yes — month to month, cancel in one click. Credits stay available through the end of your billing period." },
@@ -79,17 +75,16 @@ export default function PremiumLanding() {
     <div className="relative min-h-screen overflow-clip">
       {/* ambient aurora */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="aurora left-[8%] top-[-6%] h-[520px] w-[520px]" style={{ background: "radial-gradient(circle, rgba(255,214,10,0.30), transparent 60%)" }} />
-        <div className="aurora right-[2%] top-[10%] h-[460px] w-[460px]" style={{ background: "radial-gradient(circle, rgba(120,130,255,0.26), transparent 60%)", animationDelay: "-6s" }} />
-        <div className="aurora left-[30%] top-[120%] h-[560px] w-[560px]" style={{ background: "radial-gradient(circle, rgba(255,90,140,0.16), transparent 60%)", animationDelay: "-3s" }} />
+        <div className="aurora left-[8%] top-[-6%] h-[520px] w-[520px]" style={{ background: "radial-gradient(circle, rgba(94,140,255,0.32), transparent 60%)" }} />
+        <div className="aurora right-[2%] top-[10%] h-[460px] w-[460px]" style={{ background: "radial-gradient(circle, rgba(160,107,255,0.28), transparent 60%)", animationDelay: "-6s" }} />
+        <div className="aurora left-[30%] top-[120%] h-[560px] w-[560px]" style={{ background: "radial-gradient(circle, rgba(122,108,255,0.18), transparent 60%)", animationDelay: "-3s" }} />
       </div>
 
       {/* nav */}
       <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[var(--background)]/70 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-xl font-extrabold tracking-tight">Cadence</span>
-            <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse-dot" />
+          <Link href="/">
+            <Logo size={26} />
           </Link>
           <nav className="hidden items-center gap-7 text-sm text-white/55 md:flex">
             <a href="#features" className="hover:text-white">Features</a>
@@ -118,7 +113,7 @@ export default function PremiumLanding() {
               <span className="text-grad">from one raw take.</span>
             </h1>
             <p className="mt-7 max-w-xl text-lg leading-relaxed text-white/60">
-              Record once. Cadence removes the silence, fillers, and bad takes, generates photoreal b-roll
+              Record once. CloutHook removes the silence, fillers, and bad takes, generates photoreal b-roll
               from what you say, replaces your background, and grades it like a cinematographer — automatically.
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-3">
@@ -149,11 +144,11 @@ export default function PremiumLanding() {
                 <div className="animate-scrollscript space-y-4 text-center text-[15px] font-semibold leading-snug text-white/90">
                   <p>Here&apos;s the thing nobody tells you about short-form…</p>
                   <p>You don&apos;t need an editor. You need one good take.</p>
-                  <p>Cadence cuts the dead air, the “ums,” the restarts —</p>
+                  <p>CloutHook cuts the dead air, the “ums,” the restarts —</p>
                   <p>then drops in b-roll that matches what you&apos;re saying.</p>
                   <p>Here&apos;s the thing nobody tells you about short-form…</p>
                   <p>You don&apos;t need an editor. You need one good take.</p>
-                  <p>Cadence cuts the dead air, the “ums,” the restarts —</p>
+                  <p>CloutHook cuts the dead air, the “ums,” the restarts —</p>
                   <p>then drops in b-roll that matches what you&apos;re saying.</p>
                 </div>
               </div>
@@ -251,12 +246,21 @@ export default function PremiumLanding() {
                     <li key={f} className="flex gap-2"><CheckIcon /> <span>{f}</span></li>
                   ))}
                 </ul>
-                <Link
-                  href={t.href}
-                  className={`mt-7 rounded-xl px-4 py-3 text-center text-sm font-semibold transition ${t.highlight ? "bg-[var(--accent)] text-black hover:brightness-95" : "border border-white/15 text-white/85 hover:bg-white/5"}`}
-                >
-                  {t.cta}
-                </Link>
+                {t.plan ? (
+                  <UpgradeButton
+                    plan={t.plan as "base" | "creator"}
+                    className={`mt-7 w-full rounded-xl px-4 py-3 text-center text-sm font-semibold transition ${t.highlight ? "bg-[var(--accent)] text-black hover:brightness-95" : "border border-white/15 text-white/85 hover:bg-white/5"}`}
+                  >
+                    {t.cta}
+                  </UpgradeButton>
+                ) : (
+                  <Link
+                    href={t.href}
+                    className={`mt-7 rounded-xl px-4 py-3 text-center text-sm font-semibold transition ${t.highlight ? "bg-[var(--accent)] text-black hover:brightness-95" : "border border-white/15 text-white/85 hover:bg-white/5"}`}
+                  >
+                    {t.cta}
+                  </Link>
+                )}
               </div>
             ))}
           </div>
@@ -302,7 +306,7 @@ export default function PremiumLanding() {
           <h2 className="mx-auto max-w-2xl text-4xl font-extrabold leading-tight tracking-tight md:text-5xl">
             Your next post, <span className="text-grad">without the edit.</span>
           </h2>
-          <p className="mx-auto mt-5 max-w-lg text-white/55">Record one take today. Watch Cadence turn it into a finished, premium vertical video.</p>
+          <p className="mx-auto mt-5 max-w-lg text-white/55">Record one take today. Watch CloutHook turn it into a finished, premium vertical video.</p>
           <Link href="/signup" className="mt-8 inline-block rounded-xl bg-[var(--accent)] px-8 py-4 text-sm font-bold text-black transition hover:brightness-95">
             Start free — 60 credits on us
           </Link>
@@ -312,7 +316,7 @@ export default function PremiumLanding() {
       <footer className="border-t border-white/[0.06] py-10">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-6 text-sm text-white/35 md:flex-row">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-white/60">Cadence</span>
+            <span className="font-bold text-white/60">CloutHook</span>
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
             <span>Studio-grade short-form, automated.</span>
           </div>

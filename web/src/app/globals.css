@@ -1,18 +1,30 @@
 @import "tailwindcss";
 
 :root {
-  --background: #08080b;
-  --surface: #131319;
-  --foreground: #f4f4f5;
-  --accent: #ffd60a;
-  --muted: rgba(255, 255, 255, 0.55);
+  --background: #0b0a14;        /* deep indigo-black, still very dark */
+  --surface: #1a1826;          /* clearly elevated panel */
+  --surface-2: #232032;        /* inputs / hovered rows / popovers */
+  --surface-3: #2b2840;        /* dropdowns / active chips */
+  --foreground: #f6f5fb;       /* brighter primary (~16:1 on bg) */
+  --text-secondary: #c8c5d6;   /* AA body ~9:1 */
+  --text-muted: #9d99b0;       /* AA-large muted ~5.3:1 */
+  --border: rgba(255, 255, 255, 0.12);        /* visible hairline */
+  --border-strong: rgba(255, 255, 255, 0.18); /* emphasized edge */
+  --accent: #6e7bff;
+  --accent-2: #a06bff;
+  --muted: rgba(255, 255, 255, 0.70);          /* AA secondary */
+  --brand-grad: linear-gradient(105deg, #6f97ff, #897cff 45%, #ad7eff);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-border: var(--border);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -25,8 +37,9 @@ html {
 
 body {
   background:
-    radial-gradient(1100px 600px at 80% -10%, rgba(255, 214, 10, 0.06), transparent 60%),
-    radial-gradient(900px 500px at -10% 10%, rgba(120, 120, 255, 0.05), transparent 55%),
+    radial-gradient(1100px 620px at 78% -12%, rgba(110, 140, 255, 0.17), transparent 60%),
+    radial-gradient(900px 520px at -8% 8%, rgba(160, 110, 255, 0.14), transparent 55%),
+    radial-gradient(820px 560px at 50% 118%, rgba(130, 115, 255, 0.11), transparent 60%),
     var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
@@ -37,6 +50,31 @@ body {
   background: var(--accent);
   color: #000;
 }
+
+/* ==== GLOBAL LEGIBILITY OVERRIDES — MUST stay after @import "tailwindcss";
+   re-declares the dim utilities Tailwind v4 emits so the brighter value wins by
+   source order (no !important). Escapes must match exactly or the rule no-ops. ==== */
+.text-white\/20 { color: rgba(255, 255, 255, 0.55); }
+.text-white\/25 { color: rgba(255, 255, 255, 0.58); }
+.text-white\/30 { color: rgba(255, 255, 255, 0.60); }
+.text-white\/35 { color: rgba(255, 255, 255, 0.64); }
+.text-white\/40 { color: rgba(255, 255, 255, 0.68); }
+.text-white\/45 { color: rgba(255, 255, 255, 0.72); }
+.text-white\/50 { color: rgba(255, 255, 255, 0.76); }
+.text-white\/55 { color: rgba(255, 255, 255, 0.80); }
+.border-white\/\[0\.04\] { border-color: rgba(255, 255, 255, 0.10); }
+.border-white\/\[0\.06\] { border-color: rgba(255, 255, 255, 0.11); }
+.border-white\/\[0\.07\] { border-color: rgba(255, 255, 255, 0.12); }
+.border-white\/\[0\.08\] { border-color: rgba(255, 255, 255, 0.13); }
+.border-white\/5  { border-color: rgba(255, 255, 255, 0.11); }
+.border-white\/10 { border-color: rgba(255, 255, 255, 0.14); }
+.border-white\/12 { border-color: rgba(255, 255, 255, 0.16); }
+.border-white\/15 { border-color: rgba(255, 255, 255, 0.20); }
+.bg-white\/\[0\.02\] { background-color: rgba(255, 255, 255, 0.045); }
+.bg-white\/\[0\.03\] { background-color: rgba(255, 255, 255, 0.055); }
+.bg-white\/5 { background-color: rgba(255, 255, 255, 0.07); }
+.bg-white\/8 { background-color: rgba(255, 255, 255, 0.10); }
+::placeholder { color: rgba(255, 255, 255, 0.45); }
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
@@ -62,6 +100,11 @@ body {
 @keyframes gradpan { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 @keyframes scrollscript { from { transform: translateY(0); } to { transform: translateY(-50%); } }
 @keyframes sheen { 0% { background-position: -180% 0; } 100% { background-position: 180% 0; } }
+@keyframes fadeup { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes glowpulse {
+  0%, 100% { filter: drop-shadow(0 0 26px rgba(110, 123, 255, 0.45)); }
+  50%      { filter: drop-shadow(0 0 44px rgba(160, 107, 255, 0.65)); }
+}
 
 .aurora { position: absolute; border-radius: 9999px; filter: blur(70px); opacity: 0.55; pointer-events: none; animation: aurora 16s ease-in-out infinite; }
 .animate-floaty { animation: floaty 6.5s ease-in-out infinite; }
@@ -69,10 +112,20 @@ body {
 .animate-scrollscript { animation: scrollscript 14s linear infinite; }
 
 .text-grad {
-  background: linear-gradient(100deg, #ffffff, var(--accent) 55%, #ffffff);
+  background: linear-gradient(100deg, #ffffff, #7a8cff 40%, #a06bff 90%);
   background-size: 200% auto;
   -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 22px rgba(110, 123, 255, 0.40));
   animation: gradpan 7s ease infinite;
+}
+.brand-grad-text {
+  background: var(--brand-grad);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 9px rgba(122, 108, 255, 0.55));
+}
+/* glow on primary accent surfaces (buttons, status dots) */
+[class*="bg-[var(--accent)]"] {
+  box-shadow: 0 8px 28px -10px rgba(110, 123, 255, 0.7), 0 0 12px -3px rgba(122, 108, 255, 0.55);
 }
 .sheen {
   background-image: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%);
@@ -80,11 +133,26 @@ body {
   animation: sheen 3.2s ease-in-out infinite;
 }
 
+/* big hero headline gradient — animated pan + breathing glow */
+.hero-grad {
+  background: linear-gradient(100deg, #ffffff 0%, #8aa0ff 38%, #a06bff 72%, #c79bff 100%);
+  background-size: 220% auto;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: gradpan 9s ease infinite, glowpulse 6s ease-in-out infinite;
+}
+/* hover lift used on cards / link tiles */
+.lift { transition: transform .3s cubic-bezier(.2,.7,.2,1), border-color .3s ease, background-color .3s ease; }
+.lift:hover { transform: translateY(-4px); }
+
 /* scroll reveal — toggled by an IntersectionObserver client island */
 .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
 .reveal.in { opacity: 1; transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .aurora, .animate-floaty, .animate-marquee, .animate-scrollscript, .text-grad, .sheen { animation: none !important; }
+  .aurora, .animate-floaty, .animate-marquee, .animate-scrollscript, .animate-pulse-dot,
+  .text-grad, .sheen, .hero-grad { animation: none !important; }
+  .hero-grad { filter: drop-shadow(0 0 22px rgba(110, 123, 255, 0.4)); }
+  .lift { transition: none; }
+  .lift:hover { transform: none; }
   .reveal { transition: none; opacity: 1; transform: none; }
 }

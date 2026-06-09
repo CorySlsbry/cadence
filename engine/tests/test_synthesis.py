@@ -289,3 +289,20 @@ def test_render_multi_source_keeps_audio(talking_clip, ff, tmp_path):
     out = str(tmp_path / "multi.mp4")
     render_plan(plan, out, ff=ff)
     assert probe_media(out, ff).has_audio
+
+
+def test_render_with_hook_card_overlays(talking_clip, ff, tmp_path):
+    # The opening HOOK card must render end-to-end (libass accepts build_hook_studio's .ass)
+    # and be wired into the filtergraph as its own overlay pass.
+    from cadence import render_plan
+    from cadence.models import ClipSpec, GenerationPlan
+
+    plan = GenerationPlan(
+        clips=[ClipSpec(source=talking_clip, in_point=0.0, out_point=1.5)],
+        hook="Stop scrolling right now",
+    )
+    out = str(tmp_path / "hook.mp4")
+    log = str(tmp_path / "hook.graph.txt")
+    res = render_plan(plan, out, ff=ff, log_path=log)
+    assert res.width == 1080 and res.height == 1920
+    assert "[vhook]" in open(log, encoding="utf-8").read()  # hook overlay pass is present

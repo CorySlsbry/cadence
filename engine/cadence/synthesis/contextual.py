@@ -16,8 +16,12 @@ import os
 from cadence.imagegen.base import ImageGenerator
 from cadence.imagegen.ledger import BudgetExceeded
 from cadence.models import BrollInsert, KenBurns
+from cadence.synthesis.factual import compose_factual_asset, match_factual_asset
 
-_BROLL_CADENCE = {"match": (1.8, 1.6), "between": (2.2, 3.0), "natural": (2.6, 5.0)}
+_BROLL_CADENCE = {"match": (1.8, 1.6), "between": (2.2, 3.0), "natural": (2.6, 5.0),
+                  # "background": dense + gapless — a fresh image ~every 2.5s so the
+                  # replace-BG dynamic background changes constantly with the talking points.
+                  "background": (2.5, 0.0)}
 _BROLL_MOTIONS = (KenBurns.ZOOM_IN, KenBurns.PAN_RIGHT, KenBurns.ZOOM_OUT, KenBurns.PAN_LEFT, KenBurns.PAN_UP)
 
 # Words that never make a good b-roll topic.
@@ -41,6 +45,31 @@ def plan_broll_windows(output_duration: float, *, mode: str = "between", lead_in
         windows.append((round(t, 3), round(t + clip_len, 3), _BROLL_MOTIONS[i % len(_BROLL_MOTIONS)]))
         t += clip_len + gap
         i += 1
+    return windows
+
+
+def plan_background_windows(words_out, output_duration: float, *, interval: float = 4.0,
+                           pause_gap: float = 0.4, snap: float = 1.5):
+    """Change-point windows for the replace-BG dynamic background: a fresh image roughly every
+    ``interval`` seconds (the minimum hold), each snapped FORWARD up to ``snap`` s onto the next
+    new-audio-section boundary (a word starting after a pause > ``pause_gap``) so changes land on
+    speech transitions. Tiles ``[0, output_duration)`` with no gaps. Pure/deterministic."""
+    boundaries: list[float] = []
+    prev_end: float | None = None
+    for (_w, s, e) in (words_out or []):
+        if prev_end is not None and (s - prev_end) > pause_gap:
+            boundaries.append(float(s))
+        prev_end = e
+    changes = [0.0]
+    while changes[-1] + interval < output_duration - 0.5:
+        target = changes[-1] + interval
+        nb = next((b for b in boundaries if target <= b <= target + snap), None)
+        changes.append(round(nb if nb is not None else target, 3))
+    windows = []
+    for idx, t in enumerate(changes):
+        end = changes[idx + 1] if idx + 1 < len(changes) else float(output_duration)
+        if end - t > 0.05:
+            windows.append((round(t, 3), round(end, 3), _BROLL_MOTIONS[idx % len(_BROLL_MOTIONS)]))
     return windows
 
 
@@ -141,8 +170,10 @@ def build_ai_broll(
     max_images: int | None = None,
     width: int = 1080,
     height: int = 1920,
+    windows: list | None = None,
     distiller=None,
     cine=None,
+    factual_assets: list | None = None,
 ) -> list[BrollInsert]:
     """Generate a contextual, photoreal b-roll image for each cutaway window.
 
@@ -150,14 +181,41 @@ def build_ai_broll(
     scene + caption (fixing ASR noise) — the loop-proven path. Without one, it falls
     back to the lexical topic. ``compose_broll_image`` guarantees caption legibility
     when ``overlay_text`` is set (useful for weaker text models).
+
+    Factual-image guardrail: when ``factual_assets`` is supplied and a window's spoken
+    text names a guarded term (e.g. "Claude Code"), the EXACT curated real screenshot is
+    used for that window instead of a generated image — so it's 100% accurate and burns
+    0 AI tokens (we skip the generator entirely). See :mod:`cadence.synthesis.factual`.
     """
-    windows = plan_broll_windows(output_duration, mode=mode)
+    if windows is None:
+        windows = plan_broll_windows(output_duration, mode=mode)
     if max_images is not None:
         windows = windows[:max_images]
     inserts: list[BrollInsert] = []
     for idx, (start, end, motion) in enumerate(windows):
+        window_text = raw_text_for_window(words_out, start, end)
+        # Factual-image guardrail (pre-step): a guarded term in this window → use the real
+        # curated screenshot, skip the model. 0 tokens (charging lives inside generate()).
+        if factual_assets:
+            fa = match_factual_asset(window_text, factual_assets)
+            if fa is not None:
+                try:
+                    with open(fa.asset_path, "rb") as fh:
+                        asset_bytes = fh.read()
+                    path = compose_factual_asset(
+                        asset_bytes, os.path.join(out_dir, f"ai_broll_{idx}.png"),
+                        width=width, height=height,
+                    )
+                    inserts.append(BrollInsert(image_path=path, start=start, end=end,
+                                               motion=KenBurns.ZOOM_IN, source="factual"))
+                    print(f"[broll] factual guardrail: '{fa.key}' -> "
+                          f"{os.path.basename(path)} @ {start:.1f}-{end:.1f}s", flush=True)
+                    continue
+                except Exception as exc:  # noqa: BLE001 - unreadable asset → fall through to AI gen
+                    print(f"[broll] factual asset unreadable ({fa.key}): {exc!r} -> AI fallback",
+                          flush=True)
         if distiller is not None:
-            scene, caption = distiller.distill(raw_text_for_window(words_out, start, end))
+            scene, caption = distiller.distill(window_text)
             prompt = build_ai_prompt_scene(scene, caption, cine=cine)
         else:
             topic = topic_for_window(words_out, start, end) or "a clean modern workspace"
@@ -167,7 +225,8 @@ def build_ai_broll(
             res = generator.generate(prompt, aspect="9x16", style_refs=style_refs)
         except BudgetExceeded:
             break  # budget or persistent rate-limit — keep the cutaways generated so far
-        except Exception:  # noqa: BLE001 - a one-off failure (e.g. safety filter) skips just this window
+        except Exception as exc:  # noqa: BLE001 - a one-off failure (e.g. safety filter) skips this window
+            print(f"[broll] generate failed @ {start:.1f}s: {exc!r}", flush=True)
             continue
         path = compose_broll_image(
             res.image_bytes, caption, os.path.join(out_dir, f"ai_broll_{idx}.png"),

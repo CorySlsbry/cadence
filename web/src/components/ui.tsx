@@ -12,12 +12,12 @@ export function Button({
     primary:
       "bg-[var(--accent)] text-black hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed",
     ghost: "bg-transparent text-white/80 hover:bg-white/5",
-    outline: "border border-white/15 text-white hover:bg-white/5",
+    outline: "border border-[var(--border-strong)] text-white hover:bg-white/5",
   };
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition",
         variants[variant],
         className,
       )}
@@ -30,7 +30,7 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
   return (
     <input
       className={cn(
-        "w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white",
+        "w-full min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white",
         "placeholder:text-white/30 outline-none focus:border-[var(--accent)]/60 transition",
         className,
       )}
@@ -41,7 +41,7 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
 
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (
-    <label className={cn("mb-1.5 block text-xs font-medium text-white/50", className)} {...props} />
+    <label className={cn("mb-1.5 block text-xs font-medium text-white/65", className)} {...props} />
   );
 }
 
@@ -49,7 +49,7 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return (
     <div
       className={cn(
-        "rounded-2xl border border-white/[0.07] bg-[var(--surface)] p-6",
+        "rounded-2xl border border-white/[0.07] bg-[var(--surface)] p-4 sm:p-6",
         className,
       )}
       {...props}

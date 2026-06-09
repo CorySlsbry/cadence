@@ -507,6 +507,22 @@ class CaptionStyle(str, Enum):
     POP = "pop"       # instantaneous hard 0->1 presentation
 
 
+@dataclass(frozen=True, slots=True)
+class CaptionWord:
+    """One timed word inside a karaoke caption line (output-timeline seconds)."""
+
+    text: str
+    start: float
+    end: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"text": self.text, "start": self.start, "end": self.end}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "CaptionWord":
+        return cls(text=d["text"], start=float(d["start"]), end=float(d["end"]))
+
+
 @dataclass(slots=True)
 class Caption:
     text: str
@@ -514,6 +530,7 @@ class Caption:
     end: float
     zone: TextZone = TextZone.BOTTOM
     style: CaptionStyle = CaptionStyle.FADE
+    words: list[CaptionWord] = field(default_factory=list)  # per-word timing → karaoke; empty = legacy line
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -522,6 +539,7 @@ class Caption:
             "end": self.end,
             "zone": self.zone.value,
             "style": self.style.value,
+            "words": [w.to_dict() for w in self.words],
         }
 
     @classmethod
@@ -532,6 +550,7 @@ class Caption:
             end=float(d["end"]),
             zone=TextZone(d.get("zone", "bottom")),
             style=CaptionStyle(d.get("style", "fade")),
+            words=[CaptionWord.from_dict(w) for w in d.get("words", [])],
         )
 
 
@@ -644,6 +663,7 @@ class BrollInsert:
     end: float
     motion: KenBurns = KenBurns.ZOOM_IN
     fade: float = 0.18      # crossfade in/out at the edges (seconds)
+    source: str = "ai"      # provenance: "ai" (generated) | "factual" (curated real asset) | "brand"
 
     @property
     def duration(self) -> float:
@@ -657,6 +677,7 @@ class BrollInsert:
             "duration": self.duration,
             "motion": self.motion.value,
             "fade": self.fade,
+            "source": self.source,
         }
 
     @classmethod
@@ -667,6 +688,7 @@ class BrollInsert:
             end=float(d["end"]),
             motion=KenBurns(d.get("motion", "zoom_in")),
             fade=float(d.get("fade", 0.18)),
+            source=d.get("source", "ai"),
         )
 
 
@@ -689,6 +711,7 @@ class GenerationPlan:
     letterbox: bool = False     # 2.39:1 cinematic bars
     music_path: str | None = None   # background music bed (ducked under speech)
     music_volume: float = 0.18      # base music level under speech (0..1)
+    hook: str | None = None         # opening HOOK card text (animated, first ~2.4s); None = no card
 
     @property
     def total_duration(self) -> float:
@@ -710,6 +733,7 @@ class GenerationPlan:
             "letterbox": self.letterbox,
             "music_path": self.music_path,
             "music_volume": self.music_volume,
+            "hook": self.hook,
             "total_duration": self.total_duration,
         }
 
@@ -737,6 +761,7 @@ class GenerationPlan:
                 letterbox=bool(d.get("letterbox", False)),
                 music_path=d.get("music_path"),
                 music_volume=float(d.get("music_volume", 0.18)),
+                hook=d.get("hook"),
             )
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ValueError(f"invalid generation plan: {exc}") from exc

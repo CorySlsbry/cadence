@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CloutHook — Brand Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0A0B; --surface:#141417; --surface2:#1B1B1F;
+    --line:rgba(255,255,255,.08); --paper:#F4F4F0; --muted:#9A9A9E;
+    --volt:#CCFF00; --volt-ink:#0A0A0B;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--ink); color:var(--paper);
+    font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(60% 50% at 50% -10%, rgba(204,255,0,.07), transparent 70%);
+  }
+  .wrap{max-width:1120px; margin:0 auto; padding:0 28px}
+  h1,h2,h3,.disp{font-family:'Space Grotesk',sans-serif; letter-spacing:-.02em; margin:0}
+  .eyebrow{font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); font-weight:600}
+  .muted{color:var(--muted)}
+  .volt{color:var(--volt)}
+  section{padding:72px 0; border-top:1px solid var(--line)}
+  .sec-head{display:flex; align-items:baseline; gap:14px; margin-bottom:34px}
+  .sec-head .n{font-family:'Space Grotesk'; color:var(--volt); font-size:13px; font-weight:700; letter-spacing:.05em}
+  .sec-head h2{font-size:clamp(22px,3vw,30px); font-weight:700}
+
+  /* hero */
+  .hero{padding:96px 0 80px; text-align:left}
+  .lockup{display:flex; align-items:center; gap:22px}
+  .lockup svg{width:88px; height:88px; flex:none}
+  .wordmark{font-family:'Space Grotesk'; font-weight:700; font-size:clamp(44px,8vw,86px); letter-spacing:-.045em; line-height:.9}
+  .hero .tag{font-family:'Space Grotesk'; font-weight:500; font-size:clamp(20px,3.4vw,34px); letter-spacing:-.02em; margin-top:34px}
+  .hero .sub{color:var(--muted); max-width:560px; margin-top:16px; font-size:16px; line-height:1.6}
+  .pill{display:inline-flex; align-items:center; gap:8px; margin-top:30px; padding:9px 16px; border:1px solid var(--line); border-radius:999px; font-size:13px; color:var(--muted)}
+  .pill b{color:var(--paper); font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--volt);box-shadow:0 0 12px var(--volt)}
+
+  /* logo grid */
+  .grid{display:grid; gap:18px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:780px){.g3,.g4{grid-template-columns:repeat(2,1fr)} .g2{grid-template-columns:1fr}}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:30px; display:flex; flex-direction:column; gap:0; min-height:188px; align-items:center; justify-content:center; position:relative; overflow:hidden}
+  .card .lbl{position:absolute; left:16px; bottom:13px; font-size:11px; letter-spacing:.04em; color:var(--muted)}
+  .card.paper{background:var(--paper)}
+  .card.paper .lbl{color:#6b6b6e}
+  .card svg.mk{width:78px;height:78px}
+  .icon-tile{width:118px;height:118px;border-radius:30px;background:radial-gradient(60% 55% at 50% 38%, #20290A, var(--ink)); border:1px solid var(--line); display:flex;align-items:center;justify-content:center}
+  .icon-tile svg{width:74px;height:74px}
+  .lock-mini{display:flex;align-items:center;gap:12px}
+  .lock-mini svg{width:48px;height:48px}
+  .lock-mini .w{font-family:'Space Grotesk';font-weight:700;font-size:30px;letter-spacing:-.04em}
+
+  /* color */
+  .swatch{border:1px solid var(--line); border-radius:16px; overflow:hidden}
+  .swatch .chip{height:104px}
+  .swatch .meta{padding:14px 16px; background:var(--surface)}
+  .swatch .name{font-family:'Space Grotesk'; font-weight:700; font-size:15px}
+  .swatch .hex{color:var(--muted); font-size:12.5px; margin-top:3px; font-variant-numeric:tabular-nums}
+  .swatch .role{color:var(--muted); font-size:12px; margin-top:8px; line-height:1.4}
+  .alt-row{display:flex; gap:14px; flex-wrap:wrap; margin-top:20px; align-items:center}
+  .alt{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+  .alt i{width:18px;height:18px;border-radius:6px;display:inline-block;border:1px solid var(--line)}
+
+  /* type */
+  .specimen{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:30px 32px}
+  .specimen + .specimen{margin-top:16px}
+  .specimen .role{font-size:12px;color:var(--muted);letter-spacing:.04em;margin-bottom:14px}
+  .aa{font-family:'Space Grotesk';font-weight:700;font-size:64px;letter-spacing:-.03em;line-height:1}
+  .aa small{display:block;font-family:'Inter';font-weight:400;font-size:14px;color:var(--muted);letter-spacing:0;margin-top:14px}
+  .glyphs{font-family:'Space Grotesk';font-weight:500;font-size:22px;color:var(--muted);margin-top:16px;letter-spacing:.02em}
+  .body-spec{font-size:17px;line-height:1.65;max-width:620px}
+
+  /* voice */
+  .voice{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:780px){.voice{grid-template-columns:1fr}}
+  .voice .box{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:26px 28px}
+  .voice h3{font-size:15px;margin-bottom:14px;font-weight:700}
+  .voice ul{margin:0;padding-left:18px;color:var(--muted);line-height:1.85;font-size:14.5px}
+  .voice .do h3{color:var(--volt)}
+  .taglist{display:flex;flex-direction:column;gap:12px}
+  .tagline-main{font-family:'Space Grotesk';font-weight:700;font-size:clamp(28px,5vw,52px);letter-spacing:-.03em}
+  .tagline-main .volt{color:var(--volt)}
+  .tag-alt{color:var(--muted);font-family:'Space Grotesk';font-weight:500;font-size:18px}
+
+  /* button demo */
+  .btns{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:8px}
+  .btn{font-family:'Space Grotesk';font-weight:700;font-size:15px;border-radius:12px;padding:13px 22px;border:1px solid transparent;cursor:default}
+  .btn.primary{background:var(--volt);color:var(--volt-ink)}
+  .btn.ghost{background:transparent;border-color:var(--line);color:var(--paper)}
+
+  footer{padding:60px 0 90px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  footer .volt{font-family:'Space Grotesk';font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="eyebrow">Brand Board · v1</div>
+    <div class="lockup" style="margin-top:26px">
+      <svg viewBox="0 0 120 120" aria-hidden="true"><path d="M76 24 L76 60 Q76 92 49 92 Q24 92 24 70 Q24 57 37 54" fill="none" stroke="#CCFF00" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="wordmark"><span style="color:var(--paper)">clout</span><span class="volt">hook</span></div>
+    </div>
+    <div class="tag">Hook first. <span class="volt">Clout follows.</span></div>
+    <p class="sub">The AI editor that finds the hook-worthy moment in your footage and writes the line that stops the scroll. Built for creators who live and die by the first second.</p>
+    <div class="pill"><span class="dot"></span> <b>clouthook.com</b> · available — register to secure</div>
+  </header>
+
+  <!-- LOGO -->
+  <section>
+    <div class="sec-head"><span class="n">01</span><h2>Logo system</h2></div>
+    <div class="grid g4">
+      <div class="card">
+        <svg class="mk" viewBox="0 0 120 120" aria-hidden="true"><path d="M76 24 L76 60 Q76 92 49 92 Q24 92 24 70 Q24 57 37 54" fill="none" stroke="#CCFF00" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="lbl">Mark — the hook</span>
+      </div>
+      <div class="card">
+        <div class="icon-tile"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M76 24 L76 60 Q76 92 49 92 Q24 92 24 70 Q24 57 37 54" fill="none" stroke="#CCFF00" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <span class="lbl">App icon</span>
+      </div>
+      <div class="card">
+        <div class="lock-mini"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M76 24 L76 60 Q76 92 49 92 Q24 92 24 70 Q24 57 37 54" fill="none" stroke="#CCFF00" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="w"><span style="color:var(--paper)">clout</span><span class="volt">hook</span></span></div>
+        <span class="lbl">Horizontal lockup</span>
+      </div>
+      <div class="card paper">
+        <div class="lock-mini"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M76 24 L76 60 Q76 92 49 92 Q24 92 24 70 Q24 57 37 54" fill="none" stroke="#0A0A0B" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="w" style="color:#0A0A0B">clouthook</span></div>
+        <span class="lbl">Mono / on light</span>
+      </div>
+    </div>
+    <p class="muted" style="font-size:13.5px;margin-top:18px;line-height:1.6">One confident gesture — round caps, full momentum. Must read as a hook at 16px. Clear space ≥ the stroke width; never stretch, rotate, shadow, or recolor the hook outside Volt or mono.</p>
+  </section>
+
+  <!-- COLOR -->
+  <section>
+    <div class="sec-head"><span class="n">02</span><h2>Color</h2></div>
+    <div class="grid g4">
+      <div class="swatch"><div class="chip" style="background:#0A0A0B;border-bottom:1px solid var(--line)"></div><div class="meta"><div class="name">Ink</div><div class="hex">#0A0A0B</div><div class="role">Primary background</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#141417"></div><div class="meta"><div class="name">Surface</div><div class="hex">#141417</div><div class="role">Cards, raised surfaces</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#CCFF00"></div><div class="meta"><div class="name">Volt — the signal</div><div class="hex">#CCFF00</div><div class="role">Accents, CTAs, the hook</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#F4F4F0"></div><div class="meta"><div class="name">Paper</div><div class="hex">#F4F4F0</div><div class="role">Primary text on dark</div></div></div>
+    </div>
+    <div class="alt-row">
+      <span class="muted" style="font-size:13px">Optional energy accents (≤1 at a time):</span>
+      <span class="alt"><i style="background:#FF5A1F"></i> Heat #FF5A1F</span>
+      <span class="alt"><i style="background:#2D6BFF"></i> Signal #2D6BFF</span>
+      <span class="alt"><i style="background:#FF2E7E"></i> Hot #FF2E7E</span>
+    </div>
+    <div class="btns" style="margin-top:26px">
+      <span class="btn primary">Get the hook →</span>
+      <span class="btn ghost">Watch demo</span>
+    </div>
+  </section>
+
+  <!-- TYPE -->
+  <section>
+    <div class="sec-head"><span class="n">03</span><h2>Typography</h2></div>
+    <div class="specimen">
+      <div class="role">DISPLAY / WORDMARK — Space Grotesk</div>
+      <div class="aa">Aa Hook<small>Space Grotesk · 500 / 700 · tight tracking at large sizes</small></div>
+      <div class="glyphs">a b c d g k o · 0 1 2 3 4 5 6 7 8 9</div>
+    </div>
+    <div class="specimen">
+      <div class="role">TEXT / UI — Inter</div>
+      <p class="body-spec" style="margin:0">Drop the file. CloutHook scans for the moment that earns attention, writes three hook options, and cuts a vertical edit ready to post. You pick the winner. The first second is the whole game — so we start there.</p>
+    </div>
+  </section>
+
+  <!-- VOICE -->
+  <section>
+    <div class="sec-head"><span class="n">04</span><h2>Voice &amp; taglines</h2></div>
+    <div class="taglist" style="margin-bottom:30px">
+      <div class="tagline-main">Hook first. <span class="volt">Clout follows.</span></div>
+      <div class="tag-alt">Find the moment. Land the hook. · Stop the scroll. · The hook that earns the clout.</div>
+    </div>
+    <div class="voice">
+      <div class="box do"><h3>Do</h3><ul>
+        <li>Short, declarative. Verbs first.</li>
+        <li>Talk like a sharp creator who ships.</li>
+        <li>Specific outcomes: "three hooks in 30 seconds."</li>
+        <li>Confident, bold, premium restraint.</li>
+      </ul></div>
+      <div class="box"><h3 class="muted">Don't</h3><ul>
+        <li>Hype-bro clickbait or 🔥🔥🔥 emoji walls.</li>
+        <li>Fake scarcity / "EXPLODE YOUR REACH."</li>
+        <li>Generic AI-speak: "revolutionary solution."</li>
+        <li>Em-dash soup and hedging.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>CloutHook — Brand Board v1</span>
+    <span class="volt">clouthook.com</span>
+  </footer>
+
+</div>
+</body>
+</html>

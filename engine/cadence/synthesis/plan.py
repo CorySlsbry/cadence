@@ -17,6 +17,7 @@ from cadence.models import (
     BrollInsert,
     Caption,
     CaptionStyle,
+    CaptionWord,
     ClipSpec,
     ColorGrade,
     ColorProfile,
@@ -107,6 +108,38 @@ def group_captions(
     return captions
 
 
+def group_karaoke_captions(
+    words_out: list[tuple[str, float, float]],
+    *,
+    zone: TextZone,
+    style: CaptionStyle = CaptionStyle.POP,
+    max_words: int = 4,
+    max_dur: float = 2.2,
+) -> list[Caption]:
+    """Like :func:`group_captions`, but each line RETAINS its per-word timings (``Caption.words``)
+    so the renderer animates a per-word scale-pop ("karaoke") caption. Same chunking rules."""
+    captions: list[Caption] = []
+    chunk: list[tuple[str, float, float]] = []
+
+    def flush() -> None:
+        if not chunk:
+            return
+        text = " ".join(w[0] for w in chunk).strip()
+        words = [CaptionWord(text=w[0], start=round(w[1], 3), end=round(w[2], 3)) for w in chunk]
+        captions.append(
+            Caption(text=text, start=round(chunk[0][1], 3), end=round(chunk[-1][2], 3),
+                    zone=zone, style=style, words=words)
+        )
+
+    for word in words_out:
+        if chunk and (len(chunk) >= max_words or (word[2] - chunk[0][1]) > max_dur):
+            flush()
+            chunk = []
+        chunk.append(word)
+    flush()
+    return captions
+
+
 def _dominant_zone(analysis: ReferenceAnalysis | None, default: TextZone) -> TextZone:
     if analysis and analysis.text_overlays:
         counts = Counter(o.zone for o in analysis.text_overlays)
@@ -146,7 +179,10 @@ def build_generation_plan(
         zone = _dominant_zone(analysis, TextZone(cfg.caption_default_zone))
         style = CaptionStyle(cfg.caption_default_style)
         words_out = remap_words_to_output(edl.transcript, list(edl.kept))
-        captions = group_captions(words_out, zone=zone, style=style)
+        if getattr(cfg, "caption_mode", "legacy") == "karaoke":
+            captions = group_karaoke_captions(words_out, zone=zone, style=style)
+        else:
+            captions = group_captions(words_out, zone=zone, style=style)
 
     # 3) Colour grade — derived from the reference palette/exposure.
     grade = ColorGrade()

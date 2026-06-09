@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Card, Label, Badge } from "@/components/ui";
+import { StickyActionBar } from "@/components/sticky-action-bar";
 import { formatDuration } from "@/lib/utils";
 import type { BrandBoard, Project, RenderJob } from "@/lib/types";
 import { Recorder } from "./recorder";
@@ -127,6 +128,7 @@ export function Studio({
   const [lastBrollMode, setLastBrollMode] = useState<BrollMode>("images");
   const [brollCaption, setBrollCaption] = useState(false);
   const [brollQuality, setBrollQuality] = useState<"fast" | "standard" | "ultra">("standard");
+  const [bgDynamic, setBgDynamic] = useState(false); // Replace-BG: per-moment AI b-roll background vs one static image
   const [pacing, setPacing] = useState<"natural" | "between" | "match">("between");
   const [multiclip, setMulticlip] = useState(false);
   const [multiclipCount, setMulticlipCount] = useState(4);
@@ -303,7 +305,7 @@ export function Studio({
       broll_mode: brollMode,
       broll_quality: brollQuality,
       broll_caption: brollCaption,
-      ai_broll: brollMode === "ai",
+      ai_broll: brollMode === "ai" || (brollMode === "background" && bgDynamic),
       pacing,
       ...(multiclip ? { multiclip: { count: multiclipCount } } : {}),
       ...(musicPath ? { music_path: musicPath, music_volume: musicVolume } : {}),
@@ -387,7 +389,7 @@ export function Studio({
   const cameraLive = brollMode === "ai" || brollMode === "background";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28 sm:pb-6">
       <div className="flex items-center justify-between">
         <div>
           <Link href="/dashboard" className="text-sm text-white/40 hover:text-white">← Projects</Link>
@@ -399,7 +401,7 @@ export function Studio({
         <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-300">{error}</div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
         {/* Reference */}
         <Card>
           <SectionHead n="1" title="Reference style" done={!!referencePath} />
@@ -473,6 +475,13 @@ export function Studio({
               We <b>cut out the speaker</b> and drop them over a contextual b-roll background generated from
               your words (or your first uploaded image). Your camera background disappears.
             </p>
+          )}
+          {brollMode === "background" && (
+            <label className="mb-4 flex items-start gap-2 text-sm text-white/70">
+              <input type="checkbox" className="mt-0.5" checked={bgDynamic}
+                onChange={(e) => { setBgDynamic(e.target.checked); setPreset("custom"); }} />
+              <span><b>Dynamic AI background</b> — generate a fresh image per talking point, so the background changes as you speak. Off = one contextual background image.</span>
+            </label>
           )}
           {(brollMode === "ai" || brollMode === "background") && (
             <div className="mb-4">
@@ -548,8 +557,16 @@ export function Studio({
             <Segmented label="Caption position" value={ctl.caption_zone}
               options={[["top", "Top"], ["center", "Center"], ["bottom", "Bottom"], ["auto", "Auto"]]}
               onChange={(v) => update({ caption_zone: v as ControlState["caption_zone"] })} />
-            <Toggle label="AI b-roll cutaways" hint="Photoreal images generated from your words (~$0.04 each, $10 cap)"
-              checked={brollMode === "ai"} onChange={(on) => changeBrollMode(on ? "ai" : lastBrollMode)} />
+            <Toggle
+              label={brollMode === "background" ? "Dynamic AI background" : "AI b-roll cutaways"}
+              hint={brollMode === "background"
+                ? "A fresh AI background per talking point, behind the speaker (~$0.04 each, $10 cap)"
+                : "Photoreal images generated from your words (~$0.04 each, $10 cap)"}
+              checked={brollMode === "background" ? bgDynamic : brollMode === "ai"}
+              onChange={(on) => {
+                if (brollMode === "background") { setBgDynamic(on); setPreset("custom"); }
+                else changeBrollMode(on ? "ai" : lastBrollMode);
+              }} />
           </div>
         ) : (
           <div className="space-y-3">
@@ -691,17 +708,28 @@ export function Studio({
       </Card>
 
       {/* Generate + result */}
-      <Card className="text-center">
+      <Card className={resultUrl ? "text-center" : "border-0 bg-transparent p-0 text-center sm:border sm:border-white/[0.07] sm:bg-[var(--surface)] sm:p-6"}>
         {!job && (
-          <>
-            <Button onClick={generate} disabled={!recordingPath} className="px-10">
+          <StickyActionBar>
+            <Button onClick={generate} disabled={!recordingPath || uploading === "recording"} className="w-full sm:mx-auto sm:w-auto sm:px-10">
               Generate premium video
             </Button>
-            {!recordingPath && <p className="mt-3 text-xs text-white/35">Add footage to enable rendering.</p>}
-          </>
+            {uploading === "recording" ? (
+              <p className="mt-2 text-xs text-[var(--accent)]">
+                ⏳ Uploading your recording… the button lights up once it&apos;s saved — nothing is processed yet.
+              </p>
+            ) : !recordingPath ? (
+              <p className="mt-2 text-xs text-white/45">Add footage to enable rendering.</p>
+            ) : (
+              <p className="mt-2 text-xs text-white/45">
+                Ready. Cleaning, AI b-roll &amp; background generation all happen <em>after</em> you hit Generate.
+              </p>
+            )}
+          </StickyActionBar>
         )}
 
         {rendering && (
+          <StickyActionBar>
           <div className="mx-auto max-w-md">
             <div className="mb-2 flex items-center justify-between text-sm">
               <span className="text-white/60">{job!.status === "queued" ? "Queued…" : "Rendering…"}</span>
@@ -713,6 +741,7 @@ export function Studio({
             </div>
             <p className="mt-3 text-xs text-white/35">Analyzing reference · cleaning audio · stitching · encoding</p>
           </div>
+          </StickyActionBar>
         )}
 
         {resultUrl && (
@@ -832,8 +861,8 @@ function Toggle({ label, hint, checked, disabled, onChange }: { label: string; h
         {hint && <span className="mt-0.5 block text-xs text-white/35">{hint}</span>}
       </span>
       <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-        className={`mt-0.5 h-6 w-10 shrink-0 rounded-full p-0.5 transition ${checked ? "bg-[var(--accent)]" : "bg-white/15"}`}>
-        <span className={`block h-5 w-5 rounded-full bg-black transition ${checked ? "translate-x-4" : ""}`} />
+        className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition before:absolute before:-inset-2.5 before:content-[''] ${checked ? "bg-[var(--accent)]" : "bg-white/15"}`}>
+        <span className={`block h-6 w-6 rounded-full bg-black transition ${checked ? "translate-x-5" : ""}`} />
       </button>
     </label>
   );
@@ -846,7 +875,7 @@ function Segmented({ label, value, options, onChange, disabled }: { label: strin
       <div className="flex gap-1 rounded-xl border border-white/10 p-1">
         {options.map(([v, l]) => (
           <button key={v} onClick={() => onChange(v)}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm ${value === v ? "bg-[var(--accent)] text-black" : "text-white/55 hover:text-white"}`}>
+            className={`min-h-10 flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm ${value === v ? "bg-[var(--accent)] text-black" : "text-white/55 hover:text-white"}`}>
             {l}
           </button>
         ))}
@@ -860,7 +889,7 @@ function SelectRow({ label, value, options, onChange, disabled }: { label: strin
     <div className={disabled ? "pointer-events-none opacity-40" : ""}>
       <Label>{label}</Label>
       <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm">
+        className="min-h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm">
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
     </div>

@@ -21,18 +21,18 @@ export default async function Dashboard() {
 
   return (
     <div className="space-y-10">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Your projects</h1>
           <p className="mt-1 text-sm text-white/45">Each project pairs a reference style with your footage.</p>
         </div>
         <form action={createProject}>
-          <Button type="submit">+ New project</Button>
+          <Button type="submit" className="w-full sm:w-auto">+ New project</Button>
         </form>
       </div>
 
       {list.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 p-16 text-center">
+        <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center sm:p-16">
           <p className="text-white/50">No projects yet.</p>
           <form action={createProject} className="mt-4">
             <Button type="submit">Create your first project</Button>
@@ -44,7 +44,7 @@ export default async function Dashboard() {
             <Link
               key={p.id}
               href={`/project/${p.id}`}
-              className="group rounded-2xl border border-white/[0.07] bg-[var(--surface)] p-5 transition hover:border-[var(--accent)]/40"
+              className="group rounded-2xl border border-white/[0.07] bg-[var(--surface)] p-4 transition hover:border-[var(--accent)]/40 sm:p-5"
             >
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold">{p.name}</h3>

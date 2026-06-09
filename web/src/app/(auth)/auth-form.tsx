@@ -35,6 +35,16 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         });
         if (error) throw error;
         if (data.session) {
+          // Attribute a referral captured on the landing page (?ref=CODE), once.
+          try {
+            const code = localStorage.getItem("ch_ref");
+            if (code) {
+              await supabase.rpc("claim_referral", { p_code: code });
+              localStorage.removeItem("ch_ref");
+            }
+          } catch {
+            /* non-fatal */
+          }
           router.push(next);
           router.refresh();
         } else {

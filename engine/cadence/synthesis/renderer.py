@@ -22,7 +22,7 @@ from cadence.ffmpeg.builder import (
 from cadence.ffmpeg.probe import probe_media
 from cadence.ffmpeg.runner import FFmpeg
 from cadence.models import Anchor, GenerationPlan, RGBColor, RenderResult
-from cadence.synthesis.captions import build_ass
+from cadence.synthesis.captions import build_ass, build_ass_karaoke, build_hook_studio
 
 
 def _clip_video_chain(clip, idx: int, src_idx: int, w: int, h: int, fps: int) -> str:
@@ -63,7 +63,8 @@ def _encode_args(encoder: str, cfg: SynthesisConfig, fps: int) -> list[str]:
 
 def _build_graph(plan: GenerationPlan, source_index: dict[str, int], has_audio: bool,
                  wm_input_idx: int | None, ass_path: str | None,
-                 broll_start_idx: int = 0, audio_xf: float = 0.0, music_idx: int | None = None) -> tuple[str, str, str | None]:
+                 broll_start_idx: int = 0, audio_xf: float = 0.0, music_idx: int | None = None,
+                 hook_ass_path: str | None = None) -> tuple[str, str, str | None]:
     parts: list[str] = []
     n = len(plan.clips)
     for i, clip in enumerate(plan.clips):
@@ -118,6 +119,11 @@ def _build_graph(plan: GenerationPlan, source_index: dict[str, int], has_audio: 
     if ass_path and plan.captions:
         parts.append(build_subtitles(cur_v, "vs", ass_path))
         cur_v = "vs"
+
+    # Opening hook card sits ON TOP of captions (its own animated .ass overlay).
+    if hook_ass_path:
+        parts.append(build_subtitles(cur_v, "vhook", hook_ass_path))
+        cur_v = "vhook"
 
     if wm_input_idx is not None and plan.watermark is not None:
         anchor = plan.watermark.anchor
@@ -193,22 +199,41 @@ def render_plan(
     # plans keep their audio instead of silently dropping it.
     has_audio = all(probe_media(s, ff).has_audio for s in sources)
 
+    # Caption styling (shared by the caption track and the hook card).
+    primary = RGBColor.from_hex(plan.caption_primary_hex)
+    outline = RGBColor.from_hex(plan.caption_outline_hex)
+    font_name = "Arial"
+    if plan.caption_font_path:
+        font_name = os.path.splitext(os.path.basename(plan.caption_font_path))[0]
+
     # Generate caption .ass (if any).
     ass_path: str | None = None
     if plan.captions:
-        primary = RGBColor.from_hex(plan.caption_primary_hex)
-        outline = RGBColor.from_hex(plan.caption_outline_hex)
-        font_name = "Arial"
-        if plan.caption_font_path:
-            font_name = os.path.splitext(os.path.basename(plan.caption_font_path))[0]
-        ass = build_ass(
-            plan.captions, width=plan.width, height=plan.height,
-            font_name=font_name, primary=primary, outline=outline,
-            fade_ms=int(cfg.caption_fade_sec * 1000), letterbox=plan.letterbox,
-        )
+        if any(c.words for c in plan.captions):  # per-word data present → karaoke; else legacy
+            ass = build_ass_karaoke(
+                plan.captions, width=plan.width, height=plan.height,
+                font_name=font_name, primary=primary, outline=outline, letterbox=plan.letterbox,
+            )
+        else:
+            ass = build_ass(
+                plan.captions, width=plan.width, height=plan.height,
+                font_name=font_name, primary=primary, outline=outline,
+                fade_ms=int(cfg.caption_fade_sec * 1000), letterbox=plan.letterbox,
+            )
         fd, ass_path = tempfile.mkstemp(suffix=".ass")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(ass)
+
+    # Opening HOOK card (its own animated overlay over the first seconds).
+    hook_ass_path: str | None = None
+    if plan.hook:
+        hook_ass = build_hook_studio(
+            plan.hook, width=plan.width, height=plan.height,
+            font_name=font_name, primary=primary, outline=outline,
+        )
+        fd, hook_ass_path = tempfile.mkstemp(suffix=".ass")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(hook_ass)
 
     wm_input_idx = len(sources) if plan.watermark else None
     broll_start_idx = len(sources) + (1 if plan.watermark else 0)
@@ -218,6 +243,7 @@ def render_plan(
         graph, vlabel, alabel = _build_graph(
             plan, source_index, has_audio, wm_input_idx, ass_path, broll_start_idx,
             audio_xf=cfg.audio_crossfade_ms / 1000.0, music_idx=music_idx,
+            hook_ass_path=hook_ass_path,
         )
         if log_path:
             with open(log_path, "w", encoding="utf-8") as fh:

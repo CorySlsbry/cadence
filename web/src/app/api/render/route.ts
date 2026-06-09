@@ -24,18 +24,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid request body" }, { status: 422 });
   }
 
-  // Server-side quota enforcement — never trust the client.
+  // Per-user token meter (1 token = 1 AI scene) — the real multi-tenant gate. Never
+  // trust the client; the worker also burns tokens atomically per image. BYOK users
+  // keep their tokens (the worker skips metering for them), so they pass this freely.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("monthly_render_limit")
+    .select("tokens")
     .eq("id", user.id)
     .single();
-  const { data: used } = await supabase.rpc("renders_used_this_month", { uid: user.id });
-  const limit = profile?.monthly_render_limit ?? 10;
-  if (((used as number) ?? 0) >= limit) {
+  if (((profile?.tokens as number) ?? 0) <= 0) {
     return NextResponse.json(
-      { error: `Monthly render limit reached (${limit}). Upgrade to render more.` },
-      { status: 429 },
+      { error: "You're out of tokens. Upgrade your plan to keep rendering." },
+      { status: 402 },
     );
   }
 

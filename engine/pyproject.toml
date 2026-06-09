@@ -43,6 +43,11 @@ cadence = "cadence.cli:main"
 where = ["."]
 include = ["cadence*"]
 
+[tool.setuptools.package-data]
+# Ship the factual-image guardrail's real-asset library (manifest + screenshots) inside
+# the installed package so the worker finds them at runtime.
+cadence = ["assets/factual/*.json", "assets/factual/*.png", "assets/factual/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

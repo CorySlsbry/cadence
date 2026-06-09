@@ -55,16 +55,27 @@ def _env(name: str, default: str | None = None) -> str:
 
 
 class SupabaseCostLedger:
-    """Durable AI-spend cap backed by the ``ai_spend`` Postgres table.
+    """Durable AI-spend cap backed by the ``ai_spend`` Postgres table, plus optional
+    per-user token metering.
 
     The worker runs on stateless, scale-to-zero Cloud Run instances, so a local JSON
     ledger could not hold the cap across instances. The atomic ``charge_ai_spend`` RPC
-    (a guarded UPDATE) enforces the cap globally. Implements the ImageGenerator ledger
-    contract: ``can_spend`` / ``charge`` / ``spent``."""
+    (a guarded UPDATE) enforces a *global* runaway-safety ceiling shared by everyone.
 
-    def __init__(self, supabase: Client, cap_usd: float) -> None:
+    When ``user_id`` is set (a non-BYOK render: the user is spending the shared key),
+    each image ALSO burns one of that user's tokens via the atomic ``spend_tokens`` RPC.
+    That guarded decrement is what makes the platform safely multi-tenant — one user can
+    never touch another's balance, and two concurrent renders can't oversell it. BYOK
+    users pay their own provider and are handed ``ledger=None`` upstream, so they never
+    reach this class. Implements the ImageGenerator ledger contract:
+    ``can_spend`` / ``charge`` / ``spent``."""
+
+    def __init__(self, supabase: Client, cap_usd: float, user_id: str | None = None,
+                 job_id: str | None = None) -> None:
         self.supabase = supabase
         self.cap_usd = float(cap_usd)
+        self.user_id = user_id  # None -> global cap only (no per-user token metering)
+        self.job_id = job_id
 
     def spent(self) -> float:
         try:
@@ -76,12 +87,38 @@ class SupabaseCostLedger:
     def remaining(self) -> float:
         return max(0.0, self.cap_usd - self.spent())
 
+    def _user_tokens(self) -> int:
+        """Current token balance for the spending user (0 if unknown -> fail closed)."""
+        if not self.user_id:
+            return 1_000_000  # no per-user metering on this ledger
+        try:
+            r = (self.supabase.table("profiles").select("tokens")
+                 .eq("id", self.user_id).limit(1).execute())
+            return int(r.data[0]["tokens"]) if r.data else 0
+        except Exception:  # noqa: BLE001 - unreadable balance -> stop AI rather than hand it out free
+            return 0
+
     def can_spend(self, cost: float) -> bool:
+        # Pre-flight, before paying to generate: the user needs a token AND the global
+        # ceiling needs room. The authoritative check is the atomic charge() below.
+        if self.user_id and self._user_tokens() < 1:
+            return False
         return self.spent() + cost <= self.cap_usd + 1e-9
 
     def charge(self, cost: float) -> float:
-        """Atomically record a charge; raise BudgetExceeded if it would breach the cap."""
+        """Atomically (1) burn one user token, then (2) record the global charge. Raises
+        BudgetExceeded if the user is out of tokens or the global cap is hit; the b-roll
+        builder catches that and finishes the render without further AI scenes."""
         from cadence.imagegen.ledger import BudgetExceeded
+
+        if self.user_id:
+            try:
+                self.supabase.rpc(
+                    "spend_tokens",
+                    {"p_user": self.user_id, "p_n": 1, "p_job": self.job_id},
+                ).execute()
+            except Exception as exc:  # noqa: BLE001 - insufficient_tokens (RPC raises) -> stop AI
+                raise BudgetExceeded(f"User {self.user_id} is out of tokens: {exc}") from exc
 
         try:
             r = self.supabase.rpc("charge_ai_spend", {"p_cost": cost, "p_cap": self.cap_usd}).execute()
@@ -102,6 +139,10 @@ class Worker:
         # idle queue polls expensive, so defer it until a job actually needs ASR.
         self._transcriber = None
         self._transcriber_loaded = False
+        # Set per-job in _process; read by SupabaseCostLedger to meter the right user's
+        # tokens. Safe as instance state because the worker runs at concurrency 1.
+        self._current_user_id: str | None = None
+        self._current_job_id: str | None = None
 
     def _get_transcriber(self):
         if not self._transcriber_loaded:
@@ -185,6 +226,10 @@ class Worker:
     def _process(self, job: dict[str, Any]) -> None:
         job_id = job["id"]
         user_id = job["user_id"]
+        # Meter this job's shared-key AI scenes against this user's token balance
+        # (concurrency is 1, so instance state is safe). BYOK images bypass metering.
+        self._current_user_id = user_id
+        self._current_job_id = job_id
         print(f"[worker] claimed job {job_id}", flush=True)
         keys = self._resolve_keys(user_id)  # per-user BYOK keys (or shared fallback) for every AI call
 
@@ -493,7 +538,7 @@ class Worker:
         try:
             # Probe: a successful select confirms the table exists + the worker can read it.
             self.supabase.table("ai_spend").select("id").eq("id", 1).limit(1).execute()
-            return SupabaseCostLedger(self.supabase, cap)
+            return SupabaseCostLedger(self.supabase, cap, self._current_user_id, self._current_job_id)
         except Exception:  # noqa: BLE001
             from cadence.imagegen.ledger import CostLedger
 
@@ -534,6 +579,19 @@ class Worker:
                 return None
         return None
 
+    def _factual_assets(self):
+        """Curated real screenshots for the factual-image guardrail (cached for the
+        instance). When a talking point names a guarded term, the b-roll pipeline uses
+        the exact real image instead of generating one. Loaded from the shipped manifest
+        (override path via CADENCE_FACTUAL_MANIFEST); entries missing their PNG are skipped."""
+        if getattr(self, "_factual_cache", None) is None:
+            from cadence.synthesis.factual import default_manifest_path, load_factual_assets
+
+            path = os.environ.get("CADENCE_FACTUAL_MANIFEST") or default_manifest_path()
+            self._factual_cache = load_factual_assets(path)
+            print(f"[worker] factual guardrail: {len(self._factual_cache)} asset(s) loaded from {path}", flush=True)
+        return self._factual_cache
+
     def _build_broll(self, edl, ctrl, brand, tmp: str, keys=None):
         """Choose the b-roll source: AI-generated, uploaded/brand images, or none.
 
@@ -562,6 +620,7 @@ class Worker:
                     overlay_text=ctrl.broll_caption_overlay,
                     distiller=self._distiller(gkey),
                     cine=ctrl.cinematography,
+                    factual_assets=self._factual_assets(),
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to images rather than fail the render
                 print(f"[worker] AI b-roll failed ({exc}); using uploaded/brand images", flush=True)
@@ -613,12 +672,60 @@ class Worker:
                     words_out, edl.output_duration, self._image_generator(ctrl.broll_quality, gkey, gbyok),
                     out_dir=out_dir, mode="natural", max_images=1,
                     distiller=self._distiller(gkey), cine=ctrl.cinematography,
+                    factual_assets=self._factual_assets(),
                 )
                 if inserts:
                     return inserts[0].image_path
             except Exception as exc:  # noqa: BLE001 - fall back to no replacement
                 print(f"[worker] bg image generation failed ({exc})", flush=True)
         return None
+
+    def _background_video(self, edl, ctrl, brand, tmp: str, plan, keys=None) -> str | None:
+        """Build a full-duration background VIDEO from per-moment AI b-roll — the dynamic
+        background behind the matted speaker, changing with the talking points. Returns the
+        path, or None to fall back to a single static background (e.g. an uploaded image)."""
+        # "Dynamic AI background" was explicitly turned on, so it OVERRIDES any brand /
+        # transition image (those belong on transitions, not as the whole background) and any
+        # uploaded still. Generate a per-moment background straight from the speech.
+        _nw = len(edl.transcript.words) if (edl.transcript and edl.transcript.words) else 0
+        print(f"[worker] dynbg: entered (transcript_words={_nw})", flush=True)
+        if not (edl.transcript and edl.transcript.words):
+            print("[worker] dynbg: no transcript words -> static fallback", flush=True)
+            return None
+        gkey, gbyok = (keys or {}).get("gemini", (None, False))
+        from cadence.matte.replace import build_background_video
+        from cadence.synthesis.contextual import build_ai_broll, plan_background_windows
+        from cadence.synthesis.plan import remap_words_to_output
+
+        out_dir = os.path.join(tmp, "bg_seq")
+        os.makedirs(out_dir, exist_ok=True)
+        words_out = remap_words_to_output(edl.transcript, list(edl.kept))
+        # ~6 backgrounds per 60s (≈1 per 10s), snapped to new audio sections (sentence pauses),
+        # with a 4s minimum hold. Caps cost + render time on long clips (was up to 12).
+        cap = max(2, min(round(edl.output_duration / 10.0), 12))
+        interval = max(4.0, edl.output_duration / cap)
+        windows = plan_background_windows(words_out, edl.output_duration, interval=interval)
+        n = max(2, min(len(windows), cap))
+        if self._current_job_id:
+            self._update(self._current_job_id, progress=0.78)  # move the bar off 75% while images generate
+        try:
+            inserts = build_ai_broll(
+                words_out, edl.output_duration, self._image_generator(ctrl.broll_quality, gkey, gbyok),
+                out_dir=out_dir, windows=windows, max_images=n,
+                distiller=self._distiller(gkey), cine=ctrl.cinematography,
+                factual_assets=self._factual_assets(),
+            )
+            print(f"[worker] dynbg: build_ai_broll returned {len(inserts) if inserts else 0} scenes (n={n})", flush=True)
+            if not inserts:
+                return None
+            bg_video = os.path.join(tmp, "bg_dynamic.mp4")
+            build_background_video(inserts, edl.output_duration, bg_video, ff=self.ff,
+                                   width=plan.width, height=plan.height, fps=plan.fps)
+            print("[worker] dynbg: dynamic background video built -> using it", flush=True)
+            return bg_video
+        except Exception as exc:  # noqa: BLE001 - any failure falls back to a static background
+            print(f"[worker] dynamic bg generation failed ({exc}); using static bg", flush=True)
+            return None
 
     def _render_background_mode(self, edl, plan, ctrl, brand, tmp, out_path, keys=None):
         """Background-replacement render. Three passes are required because the matte
@@ -632,8 +739,12 @@ class Worker:
 
         from cadence.matte.replace import render_background_replaced
 
-        bg = self._background_image(edl, ctrl, brand, tmp, keys)
-        if bg is None:
+        # Dynamic background: when AI b-roll is on, the matted speaker sits over a per-moment
+        # b-roll slideshow (changing with the talking points); otherwise one static image.
+        print(f"[worker] bg-replace: ai_broll(dynamic)={ctrl.toggles.ai_broll}", flush=True)
+        bg_video = self._background_video(edl, ctrl, brand, tmp, plan, keys) if ctrl.toggles.ai_broll else None
+        bg = None if bg_video else self._background_image(edl, ctrl, brand, tmp, keys)
+        if bg is None and bg_video is None:
             print("[worker] no background available; rendering without replacement", flush=True)
             return render_plan(plan, out_path, ff=self.ff)
 
@@ -644,12 +755,17 @@ class Worker:
         )
         fg_path = os.path.join(tmp, "bg_fg.mp4")
         render_plan(fg_plan, fg_path, ff=self.ff)
+        if self._current_job_id:
+            self._update(self._current_job_id, progress=0.86)  # footage cut; compositing the background
 
         comp_path = os.path.join(tmp, "bg_comp.mp4")
         render_background_replaced(
             fg_path, bg, comp_path, ff=self.ff,
             width=plan.width, height=plan.height, fps=plan.fps,
+            background_video=bg_video,
         )
+        if self._current_job_id:
+            self._update(self._current_job_id, progress=0.90)  # background composited; finishing
 
         # The composite duration can drift sub-frame from the plan's output timeline;
         # clamp captions so the last one can't fall past it and get silently dropped.

@@ -46,7 +46,7 @@ def generate_person_mask(
     height: int = 1920,
     fps: int = 30,
     model_selection: int = 1,
-    feather: int = 3,
+    feather: int = 2,
 ) -> str:
     """Write a grayscale person-alpha video (white = keep speaker) for ``src``.
 
@@ -83,6 +83,9 @@ def generate_person_mask(
             mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
             res = segmenter.segment(mp_img)
             mask = np.asarray(res.confidence_masks[0].numpy_view(), dtype=np.float32)  # HxW 0..1, person
+            # Sharpen the soft confidence mask into a crisper alpha edge (kills the soft halo /
+            # fringe around the speaker): steepen the 0..1 transition, then a tiny blur for AA.
+            mask = np.clip((mask - 0.5) * 3.0 + 0.5, 0.0, 1.0)
             if feather > 1:
                 mask = _box_blur(mask, feather)
             writer.stdin.write((np.clip(mask, 0.0, 1.0) * 255).astype(np.uint8).tobytes())
@@ -96,19 +99,101 @@ def generate_person_mask(
     return mask_out
 
 
+def _box_blur1d(a: np.ndarray, k: int, axis: int) -> np.ndarray:
+    """1-D box blur along ``axis`` via cumulative sum — O(n) and numerically equal to
+    ``np.convolve(line, np.ones(k)/k, mode="same")`` with zero-padded edges."""
+    n = a.shape[axis]
+    if k <= 1 or n == 0:
+        return a
+    am = np.moveaxis(a, axis, -1)
+    cs = np.concatenate(
+        [np.zeros(am.shape[:-1] + (1,), dtype=np.float64), np.cumsum(am, axis=-1, dtype=np.float64)],
+        axis=-1,
+    )
+    offset = (k - 1) // 2
+    idx = np.arange(n)
+    lo = np.clip(idx + offset - k + 1, 0, n)
+    hi = np.clip(idx + offset + 1, 0, n)
+    out = (cs[..., hi] - cs[..., lo]) / k
+    return np.moveaxis(out, -1, axis)
+
+
 def _box_blur(a: np.ndarray, k: int) -> np.ndarray:
-    """Tiny separable box blur (edge feathering) without scipy."""
+    """Separable box blur (matte edge feathering) via O(n) cumsum instead of the old
+    O(n*k) ``apply_along_axis(np.convolve)`` — this runs on EVERY matte frame, so the
+    cumsum form meaningfully cuts background-replace render time. Equivalent to two
+    passes of a 1/k uniform 'same' kernel. No scipy."""
     k = max(1, int(k))
-    kern = np.ones(k) / k
-    out = np.apply_along_axis(lambda m: np.convolve(m, kern, mode="same"), 1, a)
-    out = np.apply_along_axis(lambda m: np.convolve(m, kern, mode="same"), 0, out)
+    if k == 1:
+        return np.asarray(a, dtype=np.float64)
+    out = _box_blur1d(np.asarray(a, dtype=np.float64), k, 1)
+    out = _box_blur1d(out, k, 0)
+    return out
+
+
+def _background_segments(inserts, duration: float) -> list[tuple[str, float]]:
+    """Tile b-roll images across ``[0, duration)`` so the background is never empty: image
+    ``i`` is shown from its own start to the next image's start (the first is clamped back to
+    0, the last extended to ``duration``). Pure function — returns ``(image_path, seconds)``."""
+    items = sorted(inserts, key=lambda x: x.start)
+    segs: list[tuple[str, float]] = []
+    for i, ins in enumerate(items):
+        seg_start = 0.0 if i == 0 else float(ins.start)
+        seg_end = float(items[i + 1].start) if i + 1 < len(items) else float(duration)
+        seg_dur = round(seg_end - seg_start, 3)
+        if seg_dur > 0.05:
+            segs.append((ins.image_path, seg_dur))
+    return segs
+
+
+def build_background_video(
+    inserts,
+    duration: float,
+    out: str,
+    *,
+    ff: FFmpeg | None = None,
+    width: int = 1080,
+    height: int = 1920,
+    fps: int = 30,
+    zoom: float = 1.08,
+    crf: int = 20,
+) -> str:
+    """Stitch per-moment AI b-roll images into a full-duration, full-screen background video:
+    each image is held for its window with a gentle Ken-Burns push, then concatenated. Used
+    by background-replace mode so the matted speaker sits over a *changing* background that
+    follows the talking points (vs one static image)."""
+    ff = ff or FFmpeg()
+    segs = _background_segments(inserts, duration)
+    if not segs:
+        raise ValueError("build_background_video: no usable segments")
+    args: list[str] = ["-y"]
+    for path, seg_dur in segs:
+        args += ["-loop", "1", "-t", f"{seg_dur:.3f}", "-i", path]
+    chains: list[str] = []
+    labels: list[str] = []
+    for i, (_path, seg_dur) in enumerate(segs):
+        ramp = f"min(t/{max(seg_dur, 1.0):.2f}\\,1)"
+        factor = f"(1+{zoom - 1.0:.4f}*{ramp})"
+        sw = f"trunc(({width}*{factor})/2)*2"
+        chains.append(
+            f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps={fps},"
+            f"scale=w={sw}:h=-2:eval=frame,crop={width}:{height}:(iw-{width})/2:(ih-{height})/2[v{i}]"
+        )
+        labels.append(f"[v{i}]")
+    graph = ";".join(chains) + ";" + "".join(labels) + f"concat=n={len(segs)}:v=1:a=0[outv]"
+    args += [
+        "-filter_complex", graph, "-map", "[outv]",
+        "-c:v", "libx264", "-preset", "medium", "-crf", str(crf),
+        "-pix_fmt", "yuv420p", "-r", str(fps), out,
+    ]
+    ff.run(args, timeout=1800)
     return out
 
 
 def render_background_replaced(
     src: str,
-    background_image: str,
-    out: str,
+    background_image: str | None = None,
+    out: str = "out.mp4",
     *,
     ff: FFmpeg | None = None,
     width: int = 1080,
@@ -117,8 +202,13 @@ def render_background_replaced(
     zoom: float = 1.08,
     crf: int = 19,
     mask_path: str | None = None,
+    background_video: str | None = None,
 ) -> str:
-    """Composite the segmented speaker over a Ken-Burns b-roll background, keep audio."""
+    """Composite the segmented speaker over a b-roll background, keeping audio. The background
+    is either a single still image (a Ken-Burns push) or — when ``background_video`` is given —
+    a full-duration video (e.g. a per-moment AI b-roll slideshow) used as-is behind the speaker."""
+    if background_video is None and background_image is None:
+        raise ValueError("render_background_replaced needs a background_image or background_video")
     ff = ff or FFmpeg()
     info = probe_media(src, ff)
     import tempfile
@@ -126,23 +216,32 @@ def render_background_replaced(
     mask = mask_path or tempfile.mktemp(suffix="_mask.mp4")
     generate_person_mask(src, mask, ff=ff, width=width, height=height, fps=fps)
 
-    ramp = f"min(t/{max(info.duration, 1.0):.2f}\\,1)"
-    factor = f"(1+{zoom - 1.0:.4f}*{ramp})"
-    sw = f"trunc(({width}*{factor})/2)*2"
+    if background_video is not None:
+        # The slideshow already covers the full duration + carries its own motion.
+        bg_input = ["-i", background_video]
+        bg_chain = (
+            f"[2:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},setsar=1,fps={fps}[bg];"
+        )
+    else:
+        ramp = f"min(t/{max(info.duration, 1.0):.2f}\\,1)"
+        factor = f"(1+{zoom - 1.0:.4f}*{ramp})"
+        sw = f"trunc(({width}*{factor})/2)*2"
+        bg_input = ["-loop", "1", "-t", f"{info.duration:.3f}", "-i", background_image]
+        bg_chain = (
+            f"[2:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps={fps},"
+            f"scale=w={sw}:h=-2:eval=frame,crop={width}:{height}:(iw-{width})/2:(ih-{height})/2[bg];"
+        )
+
     graph = (
         f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},fps={fps},setsar=1[fg];"
         f"[1:v]scale={width}:{height},format=gray,fps={fps}[mk];"
         f"[fg][mk]alphamerge[fga];"
-        # background = slow Ken-Burns push on the b-roll image
-        f"[2:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps={fps},"
-        f"scale=w={sw}:h=-2:eval=frame,crop={width}:{height}:(iw-{width})/2:(ih-{height})/2[bg];"
+        f"{bg_chain}"
         f"[bg][fga]overlay=0:0:format=auto[outv]"
     )
     has_audio = info.has_audio
-    args = [
-        "-y", "-i", src, "-i", mask, "-loop", "1", "-t", f"{info.duration:.3f}", "-i", background_image,
-        "-filter_complex", graph, "-map", "[outv]",
-    ]
+    args = ["-y", "-i", src, "-i", mask] + bg_input + ["-filter_complex", graph, "-map", "[outv]"]
     if has_audio:
         args += ["-map", "0:a"]
     args += ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-pix_fmt", "yuv420p", "-movflags", "+faststart"]

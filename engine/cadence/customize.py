@@ -86,6 +86,8 @@ def parse_customization(cust: dict[str, Any] | None) -> ParsedControls:
     if zone in ("top", "center", "bottom"):
         syn.caption_default_zone = zone
     syn.caption_default_style = merged.get("caption_style", syn.caption_default_style)
+    if merged.get("caption_mode") in ("legacy", "karaoke"):
+        syn.caption_mode = merged["caption_mode"]
     syn.color_grade_to_reference = _b(merged, "color_grade", True)
     if not _b(merged, "audio_crossfade", True):
         syn.audio_crossfade_ms = 0
