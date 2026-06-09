@@ -101,15 +101,26 @@ export default async function Landing() {
           </p>
 
           <h1 className="reveal mx-auto max-w-4xl text-[2.6rem] font-extrabold leading-[1.04] tracking-tight sm:text-6xl md:text-7xl">
-            <span className="text-[var(--foreground)]">Studio-grade short-form,</span>
+            <span className="text-[var(--foreground)]">The studio that knows what to film —</span>
             <br />
-            <span className="hero-grad">from one raw take.</span>
+            <span className="hero-grad">and finishes it.</span>
           </h1>
 
-          <p className="reveal mx-auto mt-6 max-w-xl text-base text-white/65 sm:text-lg">
-            Stop editing for hours. CloutHook analyzes a reference, cleans your raw footage, and
-            stitches a premium vertical video that matches its style — automatically.
+          <p className="reveal mx-auto mt-6 max-w-2xl text-base text-white/65 sm:text-lg">
+            CloutHook finds the proven video in your niche, scripts it in your voice, scrolls it on
+            the teleprompter while you record — then cleans, captions, b-rolls and clips it into a
+            studio-grade short. One loop. No editor.
           </p>
+
+          <div className="reveal mx-auto mt-7 flex max-w-3xl flex-wrap items-center justify-center gap-2 text-[13px] font-medium">
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-white/75">1 · Find the outlier</span>
+            <span className="text-white/25">→</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-white/75">2 · Script it in your voice</span>
+            <span className="text-white/25">→</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-white/75">3 · Record on teleprompter</span>
+            <span className="text-white/25">→</span>
+            <span className="rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-3.5 py-1.5 text-[var(--accent)]">4 · We finish it</span>
+          </div>
 
           <div className="reveal mt-9 w-full">
             <HeroCommandBar href={primaryHref} cta={primaryCta} />

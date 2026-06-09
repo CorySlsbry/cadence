@@ -56,14 +56,14 @@ def _stub_repurpose(text: str) -> dict[str, Any]:
     })
 
 
-def build_repurpose(text: str, llm=None) -> dict[str, Any]:
+def build_repurpose(text: str, llm=None, *, voice: str = "") -> dict[str, Any]:
     text = " ".join((text or "").split())
     if not text:
         return None
     if llm is None:
         return _stub_repurpose(text)
     try:
-        raw = llm.complete(_PROMPT + f'\n\nTranscript: "{text[:6000]}"')
+        raw = llm.complete(_PROMPT + voice + f'\n\nTranscript: "{text[:6000]}"')
         out = normalize_repurpose(raw)
         return out if (out["carousel"] or out["thread"] or out["newsletter"]) else _stub_repurpose(text)
     except Exception as exc:  # noqa: BLE001

@@ -66,8 +66,9 @@ def _stub_hooks(text: str, n: int) -> dict[str, Any]:
     return normalize_hooks({"hooks": base, "cold_open": {"line": lead, "why": "Strong, concrete opener."}}, n)
 
 
-def build_hooks(text: str, llm=None, *, n: int = MAX_HOOKS) -> dict[str, Any]:
-    """Generate hook options + a cold-open from transcript text. Falls back to a
+def build_hooks(text: str, llm=None, *, n: int = MAX_HOOKS, voice: str = "") -> dict[str, Any]:
+    """Generate hook options + a cold-open from transcript text. ``voice`` (the creator's
+    blueprint context) personalizes the output when present. Falls back to a
     deterministic stub if no LLM / on any failure (a hook blip never fails a render)."""
     text = " ".join((text or "").split())
     if not text:
@@ -75,7 +76,7 @@ def build_hooks(text: str, llm=None, *, n: int = MAX_HOOKS) -> dict[str, Any]:
     if llm is None:
         return _stub_hooks(text, n)
     try:
-        raw = llm.complete(_PROMPT.format(n=n) + f'\n\nTranscript: "{text[:6000]}"')
+        raw = llm.complete(_PROMPT.format(n=n) + voice + f'\n\nTranscript: "{text[:6000]}"')
         out = normalize_hooks(raw, n)
         return out if out["hooks"] else _stub_hooks(text, n)
     except Exception as exc:  # noqa: BLE001

@@ -37,7 +37,7 @@ LIMITS: dict[str, dict[str, int]] = {
 class CaptionWriter(Protocol):
     """Produces a raw per-platform caption draft from a transcript."""
 
-    def write(self, transcript_text: str, *, product: str | None, handle: str | None) -> dict[str, Any]: ...
+    def write(self, transcript_text: str, *, product: str | None, handle: str | None, voice: str = "") -> dict[str, Any]: ...
 
 
 # --------------------------------------------------------------------------- #
@@ -178,11 +178,11 @@ class GeminiCaptionWriter:
         self._client = genai.Client(api_key=key)
         self.model = model
 
-    def write(self, transcript_text: str, *, product: str | None, handle: str | None) -> dict[str, Any]:
+    def write(self, transcript_text: str, *, product: str | None, handle: str | None, voice: str = "") -> dict[str, Any]:
         from cadence._gemini import gemini_json
 
         prompt = _PROMPT.format(product_line=_product_line(product, handle))
-        full = f'{prompt}\n\nTranscript: "{transcript_text.strip()[:6000]}"'
+        full = f'{prompt}{voice}\n\nTranscript: "{transcript_text.strip()[:6000]}"'
         return gemini_json(self._client, self.model, full, temperature=0.7)
 
 
@@ -190,7 +190,7 @@ class StubCaptionWriter:
     """Deterministic, dependency-free writer for tests + a no-key fallback. Builds a
     plain caption from the transcript's first sentence — no network, no cost."""
 
-    def write(self, transcript_text: str, *, product: str | None, handle: str | None) -> dict[str, Any]:
+    def write(self, transcript_text: str, *, product: str | None, handle: str | None, voice: str = "") -> dict[str, Any]:
         text = " ".join(transcript_text.split())
         lead = (text.split(".")[0] or text)[:120].strip() or "New video"
         cta = f" Made with {product}." if product else ""
@@ -207,12 +207,14 @@ def build_social_captions(
     *,
     product: str | None = None,
     handle: str | None = None,
+    voice: str = "",
 ) -> dict[str, dict[str, Any]]:
-    """Generate + hard-normalize per-platform captions. Falls back to a deterministic
+    """Generate + hard-normalize per-platform captions (``voice`` = the creator's
+    blueprint context, personalizing the copy). Falls back to a deterministic
     stub draft if the writer fails, so a render never loses its captions to an LLM blip."""
     try:
-        raw = writer.write(transcript_text, product=product, handle=handle)
+        raw = writer.write(transcript_text, product=product, handle=handle, voice=voice)
     except Exception as exc:  # noqa: BLE001 - never fail the render over caption generation
         print(f"[cadence] caption writer failed -> stub: {exc!r}", flush=True)
-        raw = StubCaptionWriter().write(transcript_text, product=product, handle=handle)
+        raw = StubCaptionWriter().write(transcript_text, product=product, handle=handle, voice=voice)
     return normalize(raw if isinstance(raw, dict) else {})

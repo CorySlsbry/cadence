@@ -143,6 +143,7 @@ class Worker:
         # tokens. Safe as instance state because the worker runs at concurrency 1.
         self._current_user_id: str | None = None
         self._current_job_id: str | None = None
+        self._current_voice_ctx: str = ""  # the user's brand-blueprint prompt block ('' = generic)
 
     def _get_transcriber(self):
         if not self._transcriber_loaded:
@@ -232,6 +233,7 @@ class Worker:
         self._current_job_id = job_id
         print(f"[worker] claimed job {job_id}", flush=True)
         keys = self._resolve_keys(user_id)  # per-user BYOK keys (or shared fallback) for every AI call
+        self._current_voice_ctx = self._load_voice_ctx(user_id)  # blueprint personalization ('' = generic)
 
         with tempfile.TemporaryDirectory(prefix="cadence_job_") as tmp:
             recording = self._download(UPLOADS, job["recording_path"], os.path.join(tmp, "recording.mp4"))
@@ -406,10 +408,24 @@ class Worker:
             return build_social_captions(
                 text, writer, product=("Cadence" if credit else None),
                 handle=("@cadence.video" if credit else None),
+                voice=self._current_voice_ctx,
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] social caption generation failed ({exc})", flush=True)
             return None
+
+    def _load_voice_ctx(self, user_id) -> str:
+        """The user's brand-blueprint prompt block ('' when none) — personalizes hooks,
+        captions and repurpose. Best-effort: any read failure degrades to generic copy."""
+        try:
+            from cadence.social.blueprint import blueprint_context
+
+            r = (self.supabase.table("brand_blueprints").select("icp,pillars,voice")
+                 .eq("user_id", user_id).limit(1).execute())
+            return blueprint_context((r.data or [None])[0])
+        except Exception as exc:  # noqa: BLE001
+            print(f"[worker] blueprint read failed ({exc!r}); generic voice", flush=True)
+            return ""
 
     def _resolve_keys(self, user_id):
         """Resolve each provider key for this user: their OWN (BYOK) if connected + active,
@@ -460,8 +476,8 @@ class Worker:
         gkey = keys["gemini"][0]
         try:
             return (
-                build_hooks(text, self._gemini_json(MODEL_HOOKS, gkey)),
-                build_repurpose(text, self._gemini_json(MODEL_REPURPOSE, gkey)),
+                build_hooks(text, self._gemini_json(MODEL_HOOKS, gkey), voice=self._current_voice_ctx),
+                build_repurpose(text, self._gemini_json(MODEL_REPURPOSE, gkey), voice=self._current_voice_ctx),
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] extras generation failed ({exc})", flush=True)

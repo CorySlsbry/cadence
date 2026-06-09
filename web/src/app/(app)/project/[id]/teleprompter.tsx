@@ -16,6 +16,20 @@ export function Teleprompter({ recording }: { recording: boolean }) {
   const [fontSize, setFontSize] = useState(30);
   const [manualPlay, setManualPlay] = useState(false);
   const [editing, setEditing] = useState(true);
+  const [loadedTitle, setLoadedTitle] = useState<string | null>(null);
+
+  // Pick up a script generated on the Outliers page ("Send to teleprompter").
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("clouthook-script");
+      if (saved && saved.trim()) {
+        setScript(saved);
+        setLoadedTitle(localStorage.getItem("clouthook-script-title") || "Generated script");
+        localStorage.removeItem("clouthook-script");
+        localStorage.removeItem("clouthook-script-title");
+      }
+    } catch { /* storage unavailable — paste still works */ }
+  }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
@@ -82,7 +96,10 @@ export function Teleprompter({ recording }: { recording: boolean }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-white/60">Teleprompter</span>
+        <span className="text-xs font-medium text-white/60">
+          Teleprompter
+          {loadedTitle && <span className="ml-2 rounded-full bg-[var(--accent)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">{loadedTitle} ✓</span>}
+        </span>
         <div className="flex items-center gap-2 text-xs text-white/35">
           {wordCount > 0 && (
             <span>{wordCount} words · ~{readMins < 1 ? `${Math.round(readMins * 60)}s` : `${readMins.toFixed(1)}m`}</span>
