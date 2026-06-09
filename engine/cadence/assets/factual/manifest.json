@@ -28,7 +28,21 @@
       "asset_path": "claude-connectors.png",
       "variant": "settings-connectors",
       "alt": "Claude Desktop Connectors / MCP settings",
-      "aliases": ["connectors", "custom connector", "add a connector", "connect an app"]
+      "aliases": ["connectors", "custom connector", "add a connector", "connect an app", "connector", "integration", "integrations", "mcp", "mcp server", "mcp servers", "model context protocol"]
+    },
+    {
+      "key": "claude-plugins",
+      "asset_path": "claude-plugins.png",
+      "variant": "plugin-directory",
+      "alt": "Claude Desktop plugin directory (Skills / Connectors / Plugins)",
+      "aliases": ["plugins", "plugin", "browse plugins", "plugin directory", "claude plugins", "marketplace", "pre-built knowledge", "personal plugins"]
+    },
+    {
+      "key": "claude-customize",
+      "asset_path": "claude-customize.png",
+      "variant": "customize-home",
+      "alt": "Claude Desktop Customize home (Skills, connectors, and plugins)",
+      "aliases": ["customize claude", "customize", "claude settings", "skills connectors and plugins", "shape how claude works"]
     },
     {
       "key": "claude-mcp",
