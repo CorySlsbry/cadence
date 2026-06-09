@@ -15,14 +15,14 @@
       "asset_path": "claude-code.png",
       "variant": "code-tab",
       "alt": "Claude Desktop / Claude Code coding view",
-      "aliases": ["claude code", "code tab", "claude code cli", "coding agent"]
+      "aliases": ["claude code", "code tab", "the code tab", "code view", "claude code cli", "coding agent", "writing code"]
     },
     {
       "key": "claude-cowork",
       "asset_path": "claude-cowork.png",
       "variant": "cowork-tab",
       "alt": "Claude Desktop open to the Cowork tab",
-      "aliases": ["claude cowork", "cowork tab", "co-work", "cowork"]
+      "aliases": ["claude cowork", "cowork tab", "cowork mode", "claude cowork mode", "co-work", "cowork"]
     },
     {
       "key": "claude-connectors",
@@ -57,7 +57,7 @@
       "asset_path": "claude-permission-prompt.png",
       "variant": "allow-deny-dialog",
       "alt": "Claude Desktop permission / approval (Allow / Deny) dialog — the guardrail in action",
-      "aliases": ["permission prompt", "allow or deny", "asks for permission", "approval dialog", "guardrail", "guardrails", "always allow", "ask before"]
+      "aliases": ["permission prompt", "allow or deny", "allow deny", "allow / deny", "deny", "permission dialog", "asks for permission", "approval dialog", "needs approval", "requires approval", "human in the loop", "guardrail", "guardrails", "always allow", "ask before"]
     },
     {
       "key": "claude-model-picker",

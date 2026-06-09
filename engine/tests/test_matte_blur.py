@@ -36,3 +36,18 @@ def test_box_blur_k1_is_identity():
     rng = np.random.default_rng(7)
     a = rng.random((8, 5)).astype(np.float32)
     assert np.allclose(_box_blur(a, 1), a, atol=1e-6)
+
+
+def test_resolve_mask_stride(monkeypatch):
+    from cadence.matte.replace import _resolve_mask_stride
+
+    monkeypatch.delenv("CADENCE_MASK_STRIDE", raising=False)
+    assert _resolve_mask_stride(None) == 1          # default = every frame
+    assert _resolve_mask_stride(3) == 3             # explicit
+    assert _resolve_mask_stride(0) == 1             # clamped to >= 1
+    assert _resolve_mask_stride(-5) == 1
+    monkeypatch.setenv("CADENCE_MASK_STRIDE", "4")
+    assert _resolve_mask_stride(None) == 4          # from env
+    assert _resolve_mask_stride(2) == 2             # explicit overrides env
+    monkeypatch.setenv("CADENCE_MASK_STRIDE", "garbage")
+    assert _resolve_mask_stride(None) == 1          # bad env → safe default

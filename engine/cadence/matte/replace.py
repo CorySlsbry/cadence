@@ -37,6 +37,18 @@ def _make_segmenter():
     return vision.ImageSegmenter.create_from_options(opts)
 
 
+def _resolve_mask_stride(stride: int | None) -> int:
+    """Effective mask-compute stride. ``None`` → ``CADENCE_MASK_STRIDE`` env (default 1 = every
+    frame). K>1 reuses each computed mask for the next K-1 frames — ~K× fewer MediaPipe calls,
+    at the cost of slight motion lag (fine for low-motion talking heads). Clamped to >= 1."""
+    if stride is None:
+        try:
+            stride = int(os.environ.get("CADENCE_MASK_STRIDE", "1"))
+        except (TypeError, ValueError):
+            stride = 1
+    return max(1, int(stride))
+
+
 def generate_person_mask(
     src: str,
     mask_out: str,
@@ -47,6 +59,7 @@ def generate_person_mask(
     fps: int = 30,
     model_selection: int = 1,
     feather: int = 2,
+    stride: int | None = None,
 ) -> str:
     """Write a grayscale person-alpha video (white = keep speaker) for ``src``.
 
@@ -74,21 +87,29 @@ def generate_person_mask(
     )
     assert reader.stdout is not None and writer.stdin is not None
     fsize = width * height * 3
+    stride = _resolve_mask_stride(stride)
+    last_mask: np.ndarray | None = None
+    idx = 0
     try:
         while True:
             buf = reader.stdout.read(fsize)
             if not buf or len(buf) < fsize:
                 break
-            frame = np.ascontiguousarray(np.frombuffer(buf, dtype=np.uint8).reshape(height, width, 3))
-            mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-            res = segmenter.segment(mp_img)
-            mask = np.asarray(res.confidence_masks[0].numpy_view(), dtype=np.float32)  # HxW 0..1, person
-            # Sharpen the soft confidence mask into a crisper alpha edge (kills the soft halo /
-            # fringe around the speaker): steepen the 0..1 transition, then a tiny blur for AA.
-            mask = np.clip((mask - 0.5) * 3.0 + 0.5, 0.0, 1.0)
-            if feather > 1:
-                mask = _box_blur(mask, feather)
-            writer.stdin.write((np.clip(mask, 0.0, 1.0) * 255).astype(np.uint8).tobytes())
+            # Recompute the mask every `stride` frames; reuse the last one in between (K>1 cuts
+            # MediaPipe calls ~K×). At stride=1 (default) this is the original every-frame behavior.
+            if last_mask is None or idx % stride == 0:
+                frame = np.ascontiguousarray(np.frombuffer(buf, dtype=np.uint8).reshape(height, width, 3))
+                mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+                res = segmenter.segment(mp_img)
+                mask = np.asarray(res.confidence_masks[0].numpy_view(), dtype=np.float32)  # HxW 0..1, person
+                # Sharpen the soft confidence mask into a crisper alpha edge (kills the soft halo /
+                # fringe around the speaker): steepen the 0..1 transition, then a tiny blur for AA.
+                mask = np.clip((mask - 0.5) * 3.0 + 0.5, 0.0, 1.0)
+                if feather > 1:
+                    mask = _box_blur(mask, feather)
+                last_mask = np.clip(mask, 0.0, 1.0)
+            writer.stdin.write((last_mask * 255).astype(np.uint8).tobytes())
+            idx += 1
     finally:
         segmenter.close()
         reader.stdout.close()
