@@ -30,6 +30,9 @@ export function TopNav({ email, tokens }: { email: string; tokens: number }) {
           <Link href="/faceless" className="nav-link hidden sm:inline">
             Faceless
           </Link>
+          <Link href="/library" className="nav-link hidden sm:inline">
+            Library
+          </Link>
           <Link href="/blueprint" className="nav-link hidden sm:inline">
             Blueprint
           </Link>
@@ -66,6 +69,9 @@ export function TopNav({ email, tokens }: { email: string; tokens: number }) {
               </Link>
               <Link href="/faceless" className="block rounded-lg px-3 py-3 text-sm text-white/80 hover:bg-white/5">
                 Faceless
+              </Link>
+              <Link href="/library" className="block rounded-lg px-3 py-3 text-sm text-white/80 hover:bg-white/5">
+                Library
               </Link>
               <Link href="/blueprint" className="block rounded-lg px-3 py-3 text-sm text-white/80 hover:bg-white/5">
                 Blueprint

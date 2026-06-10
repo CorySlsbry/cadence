@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { checkRenderAllowance } from "@/lib/limits";
 
 const Body = z.object({
   projectId: z.string().uuid().nullable().optional(),
@@ -37,6 +38,12 @@ export async function POST(request: Request) {
       { error: "You're out of tokens. Upgrade your plan to keep rendering." },
       { status: 402 },
     );
+  }
+
+  // Pipeline-pressure guardrails (active-job cap + per-plan daily allowance).
+  const allowance = await checkRenderAllowance(user.id);
+  if (!allowance.ok) {
+    return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   }
 
   // Insert via the user's client so RLS guarantees user_id = auth.uid().

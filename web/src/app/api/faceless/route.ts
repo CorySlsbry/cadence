@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { geminiJson } from "@/lib/gemini";
+import { checkRenderAllowance } from "@/lib/limits";
 
 // Faceless videos: topic/script → blueprint-voiced narration → Gemini TTS → the worker
 // turns it into AI scenes + karaoke captions. This route does everything up to "queued":
@@ -95,6 +96,12 @@ export async function POST(req: Request) {
       { error: "You're out of tokens. Upgrade your plan to keep rendering." },
       { status: 402 },
     );
+  }
+
+  // Pipeline-pressure guardrails BEFORE the expensive script+TTS work.
+  const allowance = await checkRenderAllowance(user.id);
+  if (!allowance.ok) {
+    return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   }
 
   // 1) Script — written for narration over visuals (not a talking head).
