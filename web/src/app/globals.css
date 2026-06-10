@@ -14,6 +14,10 @@
   --accent-2: #a06bff;
   --muted: rgba(255, 255, 255, 0.70);          /* AA secondary */
   --brand-grad: linear-gradient(105deg, #6f97ff, #897cff 45%, #ad7eff);
+  /* Motion system — strong exponential curves (built-in CSS easings are too weak). */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  /* Semantic z-scale: content < nav(20) < dropdown(30) < backdrop(40) < modal(50) < toast(60). */
 }
 
 @theme inline {
@@ -50,6 +54,30 @@ body {
   background: var(--accent);
   color: #000;
 }
+
+/* Keyboard focus — one visible vocabulary everywhere (mouse clicks stay clean). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Press feedback — every pressable element confirms the press (emil: the interface
+   is listening). Transform-only, 160ms strong ease-out, removed under reduced motion. */
+.press {
+  transition: transform 160ms var(--ease-out);
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+/* Top-nav links: calm color shift + the same focus ring as everything else. */
+.nav-link {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.68);
+  transition: color 150ms ease;
+}
+.nav-link:hover { color: #fff; }
 
 /* ==== GLOBAL LEGIBILITY OVERRIDES — MUST stay after @import "tailwindcss";
    re-declares the dim utilities Tailwind v4 emits so the brighter value wins by
@@ -140,9 +168,12 @@ body {
   -webkit-background-clip: text; background-clip: text; color: transparent;
   animation: gradpan 9s ease infinite, glowpulse 6s ease-in-out infinite;
 }
-/* hover lift used on cards / link tiles */
-.lift { transition: transform .3s cubic-bezier(.2,.7,.2,1), border-color .3s ease, background-color .3s ease; }
-.lift:hover { transform: translateY(-4px); }
+/* hover lift used on cards / link tiles — gated to real pointers (touch taps
+   trigger phantom hovers otherwise) */
+.lift { transition: transform .3s var(--ease-out), border-color .3s ease, background-color .3s ease; }
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover { transform: translateY(-4px); }
+}
 
 /* scroll reveal — toggled by an IntersectionObserver client island */
 .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
@@ -155,4 +186,6 @@ body {
   .lift { transition: none; }
   .lift:hover { transform: none; }
   .reveal { transition: none; opacity: 1; transform: none; }
+  .press { transition: none; }
+  .press:active { transform: none; }
 }

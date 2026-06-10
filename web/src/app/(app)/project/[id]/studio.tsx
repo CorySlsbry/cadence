@@ -138,6 +138,7 @@ export function Studio({
   const [multiclip, setMulticlip] = useState(false);
   const [multiclipCount, setMulticlipCount] = useState(4);
   const [autoReframe, setAutoReframe] = useState(false);
+  const [resolution, setResolution] = useState<"1080p" | "4k">("1080p");
   const [musicPath, setMusicPath] = useState<string | null>(null);
   const [musicVolume, setMusicVolume] = useState(0.18);
 
@@ -198,7 +199,7 @@ export function Studio({
   async function saveTemplate() {
     const name = window.prompt("Name this template (saves your current settings):")?.trim();
     if (!name) return;
-    const snapshot = { ctl, preset, pacing, brollMode, brollQuality, brollCaption, bgDynamic, multiclip, multiclipCount, autoReframe };
+    const snapshot = { ctl, preset, pacing, brollMode, brollQuality, brollCaption, bgDynamic, multiclip, multiclipCount, autoReframe, resolution };
     try {
       const r = await fetch("/api/templates", {
         method: "POST",
@@ -221,6 +222,7 @@ export function Studio({
     if (typeof c.multiclip === "boolean") setMulticlip(c.multiclip);
     if (typeof c.multiclipCount === "number") setMulticlipCount(c.multiclipCount);
     if (typeof c.autoReframe === "boolean") setAutoReframe(c.autoReframe);
+    if (c.resolution === "1080p" || c.resolution === "4k") setResolution(c.resolution);
   }
 
   async function deleteTemplate(id: string) {
@@ -369,6 +371,7 @@ export function Studio({
       ai_broll: brollMode === "ai" || (brollMode === "background" && bgDynamic),
       pacing,
       auto_reframe: autoReframe,
+      resolution,
       ...(multiclip ? { multiclip: { count: multiclipCount } } : {}),
       ...(musicPath ? { music_path: musicPath, music_volume: musicVolume } : {}),
       ...(isAdmin && voiceover.trim() ? { voiceover: { script: voiceover.trim() } } : {}),
@@ -720,6 +723,12 @@ export function Studio({
 
             {/* LOOK */}
             <Disclosure title="Look" subtitle="Color grade, film stock, grain & framing">
+              <Segmented label="Render quality" value={resolution}
+                options={[["1080p", "1080p"], ["4k", "4K Ultra"]]}
+                onChange={(v) => setResolution(v as "1080p" | "4k")} />
+              {resolution === "4k" && (
+                <p className="-mt-2 text-xs text-white/45">2160 × 3840 master — sharper export, longer render.</p>
+              )}
               <Toggle label="Color grade to reference" checked={ctl.color_grade} onChange={(v) => update({ color_grade: v })} />
               <Slider label="Grade intensity" value={ctl.grade_intensity} min={0} max={100} step={5}
                 disabled={!ctl.color_grade} display={`${ctl.grade_intensity}%`} onChange={(v) => update({ grade_intensity: v })} />
@@ -919,7 +928,7 @@ function SectionHead({ n, title, done }: { n: string; title: string; done?: bool
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick}
-      className={`rounded-lg px-3 py-1.5 text-sm ${active ? "bg-white/10 text-white" : "text-white/45 hover:text-white"}`}>
+      className={`press rounded-lg px-3 py-1.5 text-sm transition-colors duration-150 ${active ? "bg-white/10 text-white" : "text-white/45 hover:text-white"}`}>
       {children}
     </button>
   );
@@ -978,8 +987,8 @@ function Toggle({ label, hint, checked, disabled, onChange }: { label: string; h
         {hint && <span className="mt-0.5 block text-xs text-white/35">{hint}</span>}
       </span>
       <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition before:absolute before:-inset-2.5 before:content-[''] ${checked ? "bg-[var(--accent)]" : "bg-white/15"}`}>
-        <span className={`block h-6 w-6 rounded-full bg-black transition ${checked ? "translate-x-5" : ""}`} />
+        className={`press relative mt-0.5 h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors duration-200 before:absolute before:-inset-2.5 before:content-[''] ${checked ? "bg-[var(--accent)]" : "bg-white/15"}`}>
+        <span className={`block h-6 w-6 rounded-full bg-black transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${checked ? "translate-x-5" : ""}`} />
       </button>
     </label>
   );
@@ -991,8 +1000,8 @@ function Segmented({ label, value, options, onChange, disabled }: { label: strin
       <Label>{label}</Label>
       <div className="flex gap-1 rounded-xl border border-white/10 p-1">
         {options.map(([v, l]) => (
-          <button key={v} onClick={() => onChange(v)}
-            className={`min-h-10 flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm ${value === v ? "bg-[var(--accent)] text-black" : "text-white/55 hover:text-white"}`}>
+          <button key={v} onClick={() => onChange(v)} aria-pressed={value === v}
+            className={`press min-h-10 flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm transition-colors duration-150 ${value === v ? "bg-[var(--accent)] text-black" : "text-white/55 hover:text-white"}`}>
             {l}
           </button>
         ))}

@@ -82,6 +82,11 @@ def parse_customization(cust: dict[str, Any] | None) -> ParsedControls:
 
     # --- synthesis --- #
     syn = SynthesisConfig()
+    # Output resolution: 1080p (default) or 4K Ultra (2160×3840 9:16). Everything downstream
+    # (renderer, captions PlayRes, b-roll Ken-Burns, watermark, matte composite) reads
+    # plan.width/height, so this one override carries 4K through the whole pipeline.
+    if str(merged.get("resolution", "1080p")).lower() in ("4k", "2160p", "uhd"):
+        syn.width, syn.height = 2160, 3840
     syn.smart_zoom = _b(merged, "smart_zoom", True)
     syn.zoom_factor = float(merged.get("zoom_intensity", syn.zoom_factor))
     zone = merged.get("caption_zone", "auto")

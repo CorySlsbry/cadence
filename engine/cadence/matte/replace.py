@@ -235,7 +235,10 @@ def render_background_replaced(
     import tempfile
 
     mask = mask_path or tempfile.mktemp(suffix="_mask.mp4")
-    generate_person_mask(src, mask, ff=ff, width=width, height=height, fps=fps)
+    # Segment at 1080p even for 4K output: MediaPipe cost stays constant and the soft
+    # gray mask upscales cleanly (the graph below already rescales it to width×height).
+    mw, mh = min(width, 1080), min(height, 1920)
+    generate_person_mask(src, mask, ff=ff, width=mw, height=mh, fps=fps)
 
     if background_video is not None:
         # The slideshow already covers the full duration + carries its own motion.

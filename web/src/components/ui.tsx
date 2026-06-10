@@ -17,7 +17,9 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition",
+        // press = scale(0.97) feedback; transitions name their properties (never `all`).
+        "press inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold",
+        "transition-[background-color,border-color,filter,opacity] duration-150",
         variants[variant],
         className,
       )}
@@ -31,7 +33,8 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
     <input
       className={cn(
         "w-full min-h-11 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white",
-        "placeholder:text-white/30 outline-none focus:border-[var(--accent)]/60 transition",
+        "placeholder:text-white/30 outline-none transition-[border-color,box-shadow] duration-150",
+        "focus:border-[var(--accent)]/60 focus:ring-2 focus:ring-[var(--accent)]/25",
         className,
       )}
       {...props}

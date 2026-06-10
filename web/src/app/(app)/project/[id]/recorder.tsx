@@ -15,12 +15,14 @@ export function Recorder({ onRecorded, onRecordStart }: { onRecorded: (blob: Blo
   const [countdown, setCountdown] = useState<number | null>(null);
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [captureRes, setCaptureRes] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
+    // Ask for a 4K portrait sensor; `ideal` degrades gracefully to the camera's best.
     navigator.mediaDevices
       .getUserMedia({
-        video: { width: { ideal: 1080 }, height: { ideal: 1920 }, facingMode: "user" },
+        video: { width: { ideal: 2160 }, height: { ideal: 3840 }, frameRate: { ideal: 30 }, facingMode: "user" },
         audio: { echoCancellation: true, noiseSuppression: true },
       })
       .then((stream) => {
@@ -30,6 +32,11 @@ export function Recorder({ onRecorded, onRecordStart }: { onRecorded: (blob: Blo
         }
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
+        const s = stream.getVideoTracks()[0]?.getSettings();
+        if (s?.width && s?.height) {
+          const long = Math.max(s.width, s.height);
+          setCaptureRes(long >= 2160 ? "4K" : long >= 1440 ? "1440p" : long >= 1080 ? "1080p" : `${long}p`);
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "camera unavailable"));
     return () => {
@@ -54,7 +61,11 @@ export function Recorder({ onRecorded, onRecordStart }: { onRecorded: (blob: Blo
     const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
       ? "video/webm;codecs=vp9,opus"
       : "video/webm";
-    const rec = new MediaRecorder(streamRef.current, { mimeType: mime, videoBitsPerSecond: 8_000_000 });
+    // Bitrate follows the real captured resolution (4K needs ~3.5× the bits of 1080p).
+    const s = streamRef.current.getVideoTracks()[0]?.getSettings();
+    const long = Math.max(s?.width ?? 1080, s?.height ?? 1920);
+    const bitrate = long >= 2160 ? 28_000_000 : long >= 1440 ? 14_000_000 : 8_000_000;
+    const rec = new MediaRecorder(streamRef.current, { mimeType: mime, videoBitsPerSecond: bitrate });
     rec.ondataavailable = (e) => {
       if (e.data.size > 0) chunks.current.push(e.data);
     };
@@ -105,6 +116,11 @@ export function Recorder({ onRecorded, onRecordStart }: { onRecorded: (blob: Blo
 
       <div className="relative mx-auto aspect-[9/16] max-w-[240px] overflow-hidden rounded-2xl border border-white/10 bg-black">
         <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+        {captureRes && !recording && (
+          <span className="absolute right-3 top-3 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white/80">
+            {captureRes}
+          </span>
+        )}
         {recording && (
           <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs">
             <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse-dot" />
@@ -124,7 +140,7 @@ export function Recorder({ onRecorded, onRecordStart }: { onRecorded: (blob: Blo
       <button
         onClick={onRecordClick}
         disabled={countdown !== null}
-        className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+        className={`press flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-70 ${
           recording ? "bg-white/10 text-white hover:bg-white/15" : "bg-red-500 text-white hover:bg-red-600"
         }`}
       >

@@ -258,6 +258,25 @@ class Worker:
                 except Exception as exc:  # noqa: BLE001 - music is optional
                     print(f"[worker] music download failed ({exc}); no music bed", flush=True)
 
+            # Faceless mode: the "recording" is narration audio (TTS or uploaded VO) —
+            # no camera. AI scenes + karaoke captions become the entire visual track.
+            fc = (job.get("customization") or {}).get("faceless")
+            if fc and not job.get("plan"):
+                out_path = os.path.join(tmp, "final.mp4")
+                result, edl_f = self._render_faceless(recording, ctrl, tmp, out_path, keys, music_path)
+                output_key = f"{user_id}/{job_id}.mp4"
+                self._upload(OUTPUTS, output_key, out_path)
+                credit = bool((job.get("customization") or {}).get("credit_cadence"))
+                captions = self._social_captions(edl_f, credit=credit, keys=keys)
+                hooks, repurpose = self._extras(edl_f, keys)
+                self._update(
+                    job_id, status="done", progress=1.0, output_path=output_key,
+                    result=result.to_dict(), social_captions=captions,
+                    hooks=hooks, repurpose=repurpose, error=None,
+                )
+                print(f"[worker] job {job_id} done (faceless) -> {output_key}", flush=True)
+                return
+
             transcript = None
             if job.get("transcript"):
                 transcript = Transcript.from_dict(job["transcript"])
@@ -386,6 +405,112 @@ class Worker:
         synth.blend_to_file(script, vo_path)
         out = os.path.join(tmp, "vo_final.mp4")
         return mux_voiceover(video_path, vo_path, out, ff=self.ff)
+
+    def _render_faceless(self, audio_path: str, ctrl, tmp: str, out_path: str, keys=None,
+                         music_path: str | None = None):
+        """Faceless render: narration audio -> ASR -> per-moment AI scenes (the existing
+        contextual b-roll engine) stitched into a full-duration visual track + karaoke
+        captions + optional hook card + ducked music. Returns (RenderResult, edl) — the
+        edl is a synthetic full-keep EDL so social captions/hooks/repurpose work as usual."""
+        from cadence.ffmpeg.probe import probe_media
+        from cadence.matte.replace import build_background_video
+        from cadence.models import (
+            CaptionStyle, EditDecisionList, RenderResult, TextZone, TimeRange,
+        )
+        from cadence.synthesis.captions import build_ass_karaoke, build_hook_studio
+        from cadence.synthesis.contextual import build_ai_broll, plan_background_windows
+        from cadence.synthesis.plan import group_karaoke_captions
+
+        info = probe_media(audio_path, self.ff)
+        dur = float(info.duration)
+        if dur <= 0.5:
+            raise RuntimeError("faceless: narration audio is empty")
+        transcriber = self._get_transcriber()
+        if transcriber is None:
+            raise RuntimeError("faceless: ASR backend unavailable")
+        tr = transcriber.transcribe(audio_path, ff=self.ff)
+        if not tr.words:
+            raise RuntimeError("faceless: no speech found in the narration audio")
+        words_out = [(w.text, w.start, w.end) for w in tr.words]
+        w, h, fps = ctrl.synthesis.width, ctrl.synthesis.height, 30
+
+        # One scene every ~7s, snapped to sentence pauses: 3..16 scenes per video.
+        gkey, gbyok = (keys or {}).get("gemini", (None, False))
+        cap = max(3, min(round(dur / 7.0), 16))
+        interval = max(3.5, dur / cap)
+        windows = plan_background_windows(words_out, dur, interval=interval)
+        n = max(2, min(len(windows), cap))
+        out_dir = os.path.join(tmp, "scenes")
+        os.makedirs(out_dir, exist_ok=True)
+        if self._current_job_id:
+            self._update(self._current_job_id, progress=0.5)
+        inserts = build_ai_broll(
+            words_out, dur, self._image_generator(ctrl.broll_quality, gkey, gbyok),
+            out_dir=out_dir, windows=windows, max_images=n,
+            distiller=self._distiller(gkey), cine=ctrl.cinematography,
+            factual_assets=self._factual_assets(),
+        )
+        if not inserts:
+            raise RuntimeError("faceless: scene generation produced no images")
+        bg = os.path.join(tmp, "scenes.mp4")
+        build_background_video(inserts, dur, bg, ff=self.ff, width=w, height=h, fps=fps)
+        if self._current_job_id:
+            self._update(self._current_job_id, progress=0.8)
+
+        vf_parts: list[str] = []
+        if ctrl.toggles.captions:
+            zone_name = ctrl.synthesis.caption_default_zone
+            zone = TextZone(zone_name) if zone_name in ("top", "center", "bottom") else TextZone("bottom")
+            try:
+                style = CaptionStyle(ctrl.synthesis.caption_default_style)
+            except ValueError:
+                style = CaptionStyle.POP
+            caps = group_karaoke_captions(words_out, zone=zone, style=style)
+            ass_path = os.path.join(tmp, "captions.ass")
+            with open(ass_path, "w", encoding="utf-8") as fh:
+                fh.write(build_ass_karaoke(caps, width=w, height=h))
+            vf_parts.append(f"subtitles='{ass_path}'")
+        if ctrl.hook:
+            hook_path = os.path.join(tmp, "hook.ass")
+            with open(hook_path, "w", encoding="utf-8") as fh:
+                fh.write(build_hook_studio(ctrl.hook, width=w, height=h))
+            vf_parts.append(f"subtitles='{hook_path}'")
+        vchain = "[0:v]" + (",".join(vf_parts) + "," if vf_parts else "") + "format=yuv420p[outv]"
+
+        if music_path:
+            vol = max(0.05, min(float(ctrl.music_volume), 0.5))
+            achain = (
+                f"[2:a]volume={vol:.3f}[mvol];[1:a]asplit=2[sm][ss];"
+                "[mvol][ss]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=300[md];"
+                "[sm][md]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix];"
+                "[mix]loudnorm=I=-16:TP=-1.5:LRA=11[outa]"
+            )
+            inputs = ["-i", bg, "-i", audio_path, "-stream_loop", "-1", "-i", music_path]
+        else:
+            achain = "[1:a]loudnorm=I=-16:TP=-1.5:LRA=11[outa]"
+            inputs = ["-i", bg, "-i", audio_path]
+
+        args = (
+            ["-y", *inputs, "-filter_complex", f"{vchain};{achain}",
+             "-map", "[outv]", "-map", "[outa]", "-t", f"{dur:.3f}",
+             "-c:v", "libx264", "-preset", "medium", "-crf", "19" if w <= 1080 else "20",
+             "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-r", str(fps),
+             "-c:a", "aac", "-b:a", "192k", out_path]
+        )
+        self.ff.run(args, timeout=3600)
+        out_info = probe_media(out_path, self.ff)
+        if out_info.duration <= 0:
+            raise RuntimeError("faceless: render produced an empty output")
+        result = RenderResult(
+            output_path=out_path, width=out_info.width, height=out_info.height,
+            fps=out_info.fps, duration=out_info.duration, codec="h264",
+            used_hardware=False, encoder="libx264", command=args,
+        )
+        edl = EditDecisionList(
+            source=audio_path, source_duration=dur,
+            kept=(TimeRange(0.0, round(dur, 3)),), removed=(), transcript=tr,
+        )
+        return result, edl
 
     def _social_captions(self, edl, *, credit: bool = False, keys=None):
         """Generate per-platform 'ready to post' captions from the transcript. A cheap
