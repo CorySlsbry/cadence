@@ -9,7 +9,11 @@ import { Button, Input, Label, Card } from "@/components/ui";
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") ?? "/dashboard";
+  // A chosen plan survives the whole auth journey (email, email-confirm, Google)
+  // and lands the user directly in Stripe Checkout via /checkout/continue.
+  const planParam = params.get("plan");
+  const plan = planParam === "base" || planParam === "creator" ? planParam : null;
+  const next = plan ? `/checkout/continue?plan=${plan}` : (params.get("next") ?? "/dashboard");
   const supabase = createClient();
 
   const [email, setEmail] = useState("");
@@ -31,7 +35,11 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName } },
+          options: {
+            data: { full_name: fullName },
+            // Email-confirm flow returns through the callback and still reaches checkout.
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          },
         });
         if (error) throw error;
         if (data.session) {
@@ -118,12 +126,12 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         {isSignup ? (
           <>
             Already have an account?{" "}
-            <Link href="/login" className="text-[var(--accent)] hover:underline">Sign in</Link>
+            <Link href={plan ? `/login?plan=${plan}` : "/login"} className="text-[var(--accent)] hover:underline">Sign in</Link>
           </>
         ) : (
           <>
             New here?{" "}
-            <Link href="/signup" className="text-[var(--accent)] hover:underline">Create an account</Link>
+            <Link href={plan ? `/signup?plan=${plan}` : "/signup"} className="text-[var(--accent)] hover:underline">Create an account</Link>
           </>
         )}
       </p>

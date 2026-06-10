@@ -54,6 +54,19 @@ def _env(name: str, default: str | None = None) -> str:
     return val
 
 
+AUDIO_FIT_BPS = 160_000  # AAC track reserved in the fit budget
+
+
+def fit_video_bitrate(limit_bytes: int, duration_sec: float, *, audio_bps: int = AUDIO_FIT_BPS) -> int:
+    """Video bitrate that lands a re-encode ~93% under the upload cap.
+
+    total_bits = limit*8*0.93 spread across the duration, minus the audio track,
+    floored at 500kbps so even pathological durations stay watchable."""
+    duration_sec = max(duration_sec, 0.1)
+    total_bps = (limit_bytes * 8 * 0.93) / duration_sec
+    return max(int(total_bps - audio_bps), 500_000)
+
+
 class SupabaseCostLedger:
     """Durable AI-spend cap backed by the ``ai_spend`` Postgres table, plus optional
     per-user token metering.
@@ -996,10 +1009,43 @@ class Worker:
         raise last if last else RuntimeError(f"download failed: {key}")
 
     def _upload(self, bucket: str, key: str, src: str) -> None:
+        if src.endswith(".mp4"):
+            src = self._fit_upload(src)  # storage caps uploads — never let a render die on size
         with open(src, "rb") as fh:
             self.supabase.storage.from_(bucket).upload(
                 key, fh.read(), {"content-type": "video/mp4", "upsert": "true"}
             )
+
+    def _fit_upload(self, src: str) -> str:
+        """Guarantee the file fits under the storage upload cap (CADENCE_MAX_UPLOAD_MB).
+
+        Oversized renders (e.g. long 4K cuts) are re-encoded once at a bitrate computed
+        to land ~93% of the cap; a second pass at 85% of that handles estimator misses.
+        Returns the path to upload (the original when it already fits)."""
+        limit_mb = float(os.environ.get("CADENCE_MAX_UPLOAD_MB", "48"))
+        limit = int(limit_mb * 1024 * 1024)
+        if os.path.getsize(src) <= limit:
+            return src
+        from cadence.ffmpeg.probe import probe_media
+
+        dur = max(probe_media(src, self.ff).duration, 0.1)
+        v_bps = fit_video_bitrate(limit, dur)
+        out = src
+        for attempt in range(2):
+            out = src.rsplit(".", 1)[0] + f".fit{attempt}.mp4"
+            self.ff.run(
+                ["-y", "-i", src, "-c:v", "libx264", "-preset", "fast",
+                 "-b:v", str(v_bps), "-maxrate", str(int(v_bps * 1.08)), "-bufsize", str(v_bps * 2),
+                 "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                 "-c:a", "aac", "-b:a", "160k", out],
+                timeout=1800,
+            )
+            size = os.path.getsize(out)
+            print(f"[worker] fit-upload pass {attempt}: {size / 1048576:.1f}MB @ {v_bps}bps (cap {limit_mb}MB)", flush=True)
+            if size <= limit:
+                return out
+            v_bps = int(v_bps * 0.85)
+        return out  # best effort — two passes land within the cap in practice
 
     def _update(self, job_id: str, **fields: Any) -> None:
         payload = {k: v for k, v in fields.items() if v is not None or k == "error"}
