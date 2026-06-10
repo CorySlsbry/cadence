@@ -48,6 +48,9 @@ export async function POST(request: Request) {
       case "invoice.paid":
         await accrueCommission(admin, event.data.object as Stripe.Invoice);
         break;
+      case "charge.refunded":
+        await reverseCommission(admin, event.data.object as Stripe.Charge);
+        break;
     }
   } catch (err) {
     console.error("[stripe webhook]", event.type, err);
@@ -188,4 +191,17 @@ async function accrueCommission(admin: Admin, inv: Stripe.Invoice) {
     status: "pending",
     stripe_invoice_id: inv.id,
   });
+}
+
+/** A refunded charge claws back its commission — unless it was already paid out
+ *  (the 30-day maturation hold makes that the rare case, not the norm). */
+async function reverseCommission(admin: Admin, charge: Stripe.Charge) {
+  const invField = (charge as unknown as { invoice?: string | { id: string } }).invoice;
+  const invId = typeof invField === "string" ? invField : invField?.id ?? null;
+  if (!invId) return;
+  await admin
+    .from("commissions")
+    .update({ status: "reversed" })
+    .eq("stripe_invoice_id", invId)
+    .in("status", ["pending", "approved"]);
 }
