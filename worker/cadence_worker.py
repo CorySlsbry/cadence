@@ -421,8 +421,16 @@ class Worker:
         from cadence.synthesis.contextual import build_ai_broll, plan_background_windows
         from cadence.synthesis.plan import group_karaoke_captions
 
-        info = probe_media(audio_path, self.ff)
-        dur = float(info.duration)
+        # probe_media requires a video stream — the narration is audio-only, so read
+        # the duration straight from ffprobe instead.
+        import json as _json
+        raw = self.ff.probe_raw([
+            "-v", "error", "-print_format", "json", "-show_format", "-show_streams", audio_path,
+        ])
+        meta = _json.loads(raw)
+        if not any(s.get("codec_type") == "audio" for s in meta.get("streams", [])):
+            raise RuntimeError("faceless: narration file has no audio stream")
+        dur = float(meta.get("format", {}).get("duration") or 0.0)
         if dur <= 0.5:
             raise RuntimeError("faceless: narration audio is empty")
         transcriber = self._get_transcriber()
