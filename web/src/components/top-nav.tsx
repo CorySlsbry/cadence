@@ -43,8 +43,10 @@ export function TopNav({ email, tokens }: { email: string; tokens: number }) {
             Connections
           </Link>
 
-          {/* Token balance — always visible */}
-          <Badge tone={tokens <= 0 ? "bad" : "accent"}>{tokens} tokens</Badge>
+          {/* Token balance — always visible; click-through to top up */}
+          <Link href="/premium#topup" title="Top up tokens">
+            <Badge tone={tokens <= 0 ? "bad" : "accent"}>{tokens} tokens</Badge>
+          </Link>
 
           <span className="hidden max-w-[14ch] truncate text-sm text-white/40 lg:inline">{email}</span>
           <button

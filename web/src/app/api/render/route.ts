@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     .single();
   if (((profile?.tokens as number) ?? 0) <= 0) {
     return NextResponse.json(
-      { error: "You're out of tokens. Upgrade your plan to keep rendering." },
+      { error: "You're out of tokens. Top up or upgrade on the Pricing page (tap your token badge)." },
       { status: 402 },
     );
   }

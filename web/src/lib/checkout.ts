@@ -1,7 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripe } from "@/lib/stripe";
-import { ensurePlanPrice, type PlanRow } from "@/lib/pricing";
+import { ensurePlanPrice, ensurePackPrice, type PlanRow, type PackRow } from "@/lib/pricing";
 
 /**
  * Creates a Stripe hosted Checkout Session for a paid plan.
@@ -56,6 +56,58 @@ export async function createCheckoutSessionFor(
     cancel_url: `${origin}/premium?canceled=1`,
     metadata: meta,
     subscription_data: { metadata: meta },
+    allow_promotion_codes: true,
+  });
+  if (!session.url) throw new Error("Stripe did not return a checkout URL");
+  return session.url;
+}
+
+/** One-time token pack purchase — price re-verified against token_packs per session. */
+export async function createPackCheckoutSessionFor(
+  user: User,
+  packKey: string,
+  origin: string,
+): Promise<string> {
+  const admin = createAdminClient();
+
+  const { data: pack } = await admin
+    .from("token_packs")
+    .select("key,name,tokens,price_usd,active,stripe_price_id,stripe_product_id")
+    .eq("key", packKey)
+    .maybeSingle();
+  if (!pack || !pack.active) throw new Error("pack is not purchasable");
+
+  const stripe = getStripe();
+  const { stripe_price_id: priceId } = await ensurePackPrice(stripe, admin, pack as PackRow);
+
+  let affiliateId = "";
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("referred_by")
+    .eq("id", user.id)
+    .single();
+  if (profile?.referred_by) {
+    const { data: aff } = await admin
+      .from("affiliates")
+      .select("id")
+      .eq("user_id", profile.referred_by)
+      .maybeSingle();
+    affiliateId = aff?.id ?? "";
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    line_items: [{ price: priceId, quantity: 1 }],
+    customer_email: user.email ?? undefined,
+    client_reference_id: user.id,
+    success_url: `${origin}/dashboard?topup=1`,
+    cancel_url: `${origin}/premium?canceled=1#topup`,
+    metadata: {
+      user_id: user.id,
+      pack: pack.key,
+      tokens: String(pack.tokens),
+      affiliate_id: affiliateId,
+    },
     allow_promotion_codes: true,
   });
   if (!session.url) throw new Error("Stripe did not return a checkout URL");

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { UpgradeButton } from "@/components/upgrade-button";
+import { PackButton } from "@/components/pack-button";
 
 export type Tier = {
   name: string;
@@ -14,6 +15,14 @@ export type Tier = {
   features: string[];
   plan: "base" | "creator" | null;
   highlight: boolean;
+};
+
+export type Pack = {
+  key: string;
+  name: string;
+  tokens: number;
+  price: string;
+  perToken: string;
 };
 
 const PILLARS = [
@@ -49,7 +58,7 @@ function CheckIcon() {
   );
 }
 
-export function PremiumClient({ tiers }: { tiers: Tier[] }) {
+export function PremiumClient({ tiers, packs }: { tiers: Tier[]; packs: Pack[] }) {
   // One IntersectionObserver drives every .reveal element on the page (no deps).
   useEffect(() => {
     const els = Array.from(document.querySelectorAll<HTMLElement>(".reveal"));
@@ -258,6 +267,40 @@ export function PremiumClient({ tiers }: { tiers: Tier[] }) {
             Prices update everywhere the moment we change them — the page, checkout, and Stripe always agree.
           </p>
         </section>
+
+        {/* token top-ups — for heavy weeks, without changing plans */}
+        {packs.length > 0 && (
+          <section id="topup" className="py-12">
+            <div className="reveal mx-auto mb-10 max-w-2xl text-center">
+              <h2 className="text-3xl font-extrabold tracking-tight md:text-4xl">Out of tokens mid-streak?</h2>
+              <p className="mt-4 text-white/55">
+                Top up instantly — one-time purchase, tokens land the moment payment clears, and they
+                stack on top of your monthly grant.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {packs.map((p, i) => (
+                <div key={p.key} className="reveal flex flex-col rounded-2xl border border-white/[0.08] bg-[var(--surface)]/50 p-6" style={{ transitionDelay: `${i * 60}ms` }}>
+                  <div className="flex items-baseline justify-between">
+                    <h3 className="text-lg font-semibold">{p.name}</h3>
+                    <span className="text-xs text-white/40">{p.perToken}</span>
+                  </div>
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <span className="text-4xl font-extrabold tracking-tight">{p.tokens}</span>
+                    <span className="text-sm text-white/45">tokens</span>
+                  </div>
+                  <p className="mt-2 text-sm text-white/50">≈ {p.tokens} AI scenes, whenever you need them.</p>
+                  <PackButton
+                    pack={p.key}
+                    className="press mt-6 w-full rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-4 py-3 text-center text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent)]/15"
+                  >
+                    Add {p.tokens} for {p.price}
+                  </PackButton>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* tokens / no-runaway certainty band */}
         <section className="reveal my-12 overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-br from-[var(--surface)] to-[var(--background)] p-8 md:p-12">

@@ -61,6 +61,12 @@ export async function POST(request: Request) {
 }
 
 async function activateFromSession(admin: Admin, stripe: Stripe, s: Stripe.Checkout.Session) {
+  // One-time token pack purchases take their own path (no subscription involved).
+  if (s.mode === "payment" && s.metadata?.pack) {
+    await grantPackPurchase(admin, s);
+    return;
+  }
+
   const userId = s.metadata?.user_id || s.client_reference_id || undefined;
   const plan = s.metadata?.plan || undefined;
   const affiliateId = s.metadata?.affiliate_id || null;
@@ -109,6 +115,51 @@ async function activateFromSession(admin: Admin, stripe: Stripe, s: Stripe.Check
       token_period_start: new Date().toISOString(),
     })
     .eq("id", userId);
+}
+
+/** Token pack paid → grant tokens exactly once (unique session id absorbs Stripe retries)
+ *  and accrue the referring affiliate's commission on the one-time amount. */
+async function grantPackPurchase(admin: Admin, s: Stripe.Checkout.Session) {
+  const userId = s.metadata?.user_id || s.client_reference_id || undefined;
+  const tokens = Number(s.metadata?.tokens ?? 0);
+  const packKey = s.metadata?.pack ?? "";
+  if (!userId || !tokens || !s.id) return;
+
+  const amountUsd = Math.round((s.amount_total ?? 0)) / 100;
+  const { error: insErr } = await admin.from("token_topups").insert({
+    user_id: userId,
+    pack_key: packKey,
+    tokens,
+    amount_usd: amountUsd,
+    affiliate_id: s.metadata?.affiliate_id || null,
+    stripe_session_id: s.id,
+  });
+  if (insErr) return; // duplicate session id = already granted (retry) → do nothing
+
+  await admin.rpc("grant_extra_tokens", {
+    p_user: userId,
+    p_tokens: tokens,
+    p_reason: `topup:${packKey}`,
+  });
+
+  const affiliateId = s.metadata?.affiliate_id || null;
+  if (affiliateId && amountUsd > 0) {
+    const { data: aff } = await admin
+      .from("affiliates")
+      .select("commission_rate")
+      .eq("id", affiliateId)
+      .maybeSingle();
+    const rate = Number(aff?.commission_rate ?? 0.3);
+    await admin.from("commissions").insert({
+      affiliate_id: affiliateId,
+      subscription_id: null,
+      referred_user_id: userId,
+      amount_usd: Math.round(amountUsd * rate * 100) / 100,
+      rate,
+      status: "pending",
+      stripe_invoice_id: s.id, // unique idx → idempotent for pack sessions too
+    });
+  }
 }
 
 async function syncSubscription(admin: Admin, sub: Stripe.Subscription) {

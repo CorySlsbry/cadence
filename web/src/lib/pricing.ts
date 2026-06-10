@@ -22,6 +22,16 @@ export type PlanRow = {
   stripe_product_id: string | null;
 };
 
+export type PackRow = {
+  key: string;
+  name: string;
+  tokens: number;
+  price_usd: string | number;
+  active: boolean;
+  stripe_price_id: string | null;
+  stripe_product_id: string | null;
+};
+
 export type SyncResult = {
   key: string;
   price_usd: number;
@@ -34,20 +44,22 @@ function cents(priceUsd: string | number): number {
   return Math.round(Number(priceUsd) * 100);
 }
 
-/** The product for a plan: reuse the stored/linked one, else create it. */
+/** The product for a row: reuse the stored/linked one, else create it. */
 async function ensureProduct(
   stripe: Stripe,
   admin: SupabaseClient,
-  plan: PlanRow,
+  table: "plans" | "token_packs",
+  row: { key: string; stripe_product_id: string | null },
+  productName: string,
   linkedProductId?: string,
 ): Promise<string> {
-  const candidate = plan.stripe_product_id || linkedProductId;
+  const candidate = row.stripe_product_id || linkedProductId;
   if (candidate) {
     try {
       const prod = await stripe.products.retrieve(candidate);
       if (prod && !prod.deleted) {
-        if (!plan.stripe_product_id) {
-          await admin.from("plans").update({ stripe_product_id: prod.id }).eq("key", plan.key);
+        if (!row.stripe_product_id) {
+          await admin.from(table).update({ stripe_product_id: prod.id }).eq("key", row.key);
         }
         return prod.id;
       }
@@ -56,51 +68,49 @@ async function ensureProduct(
     }
   }
   const created = await stripe.products.create({
-    name: `CloutHook ${plan.name}`,
-    metadata: { plan_key: plan.key },
+    name: productName,
+    metadata: { plan_key: row.key },
   });
-  await admin.from("plans").update({ stripe_product_id: created.id }).eq("key", plan.key);
+  await admin.from(table).update({ stripe_product_id: created.id }).eq("key", row.key);
   return created.id;
 }
 
 /**
- * Returns a Stripe price id guaranteed to equal the plan's current price_usd.
- * Rotates (create new + deactivate old) when they differ — Stripe prices are
- * immutable, so rotation is the only correct way to "change" a price.
+ * Core sync: returns a Stripe price id guaranteed to equal the row's current
+ * price_usd. Rotates (create new + deactivate old) when they differ — Stripe
+ * prices are immutable, so rotation is the only correct way to "change" one.
  */
-export async function ensurePlanPrice(
+async function ensureRowPrice(
   stripe: Stripe,
   admin: SupabaseClient,
-  plan: PlanRow,
+  table: "plans" | "token_packs",
+  row: { key: string; price_usd: string | number; stripe_price_id: string | null; stripe_product_id: string | null },
+  productName: string,
+  recurring: boolean,
 ): Promise<SyncResult> {
-  const want = cents(plan.price_usd);
-  if (want <= 0) throw new Error(`plan ${plan.key} is not purchasable`);
+  const want = cents(row.price_usd);
+  if (want <= 0) throw new Error(`${table}.${row.key} is not purchasable`);
 
   let current: Stripe.Price | null = null;
-  if (plan.stripe_price_id) {
+  if (row.stripe_price_id) {
     try {
-      current = await stripe.prices.retrieve(plan.stripe_price_id);
+      current = await stripe.prices.retrieve(row.stripe_price_id);
     } catch {
       current = null; // deleted/foreign id → treat as missing
     }
   }
 
-  if (
-    current &&
-    current.active &&
-    current.unit_amount === want &&
-    current.currency === "usd" &&
-    current.recurring?.interval === "month"
-  ) {
+  const intervalOk = recurring ? current?.recurring?.interval === "month" : !current?.recurring;
+  if (current && current.active && current.unit_amount === want && current.currency === "usd" && intervalOk) {
     const productId = await ensureProduct(
-      stripe, admin, plan,
+      stripe, admin, table, row, productName,
       typeof current.product === "string" ? current.product : current.product?.id,
     );
-    return { key: plan.key, price_usd: want / 100, action: "match", stripe_price_id: current.id, stripe_product_id: productId };
+    return { key: row.key, price_usd: want / 100, action: "match", stripe_price_id: current.id, stripe_product_id: productId };
   }
 
   const productId = await ensureProduct(
-    stripe, admin, plan,
+    stripe, admin, table, row, productName,
     current ? (typeof current.product === "string" ? current.product : current.product?.id) : undefined,
   );
 
@@ -108,15 +118,15 @@ export async function ensurePlanPrice(
     product: productId,
     unit_amount: want,
     currency: "usd",
-    recurring: { interval: "month" },
-    metadata: { plan_key: plan.key },
+    ...(recurring ? { recurring: { interval: "month" as const } } : {}),
+    metadata: { plan_key: row.key },
   });
 
   const { error } = await admin
-    .from("plans")
+    .from(table)
     .update({ stripe_price_id: fresh.id, stripe_product_id: productId })
-    .eq("key", plan.key);
-  if (error) throw new Error(`price created but plans update failed: ${error.message}`);
+    .eq("key", row.key);
+  if (error) throw new Error(`price created but ${table} update failed: ${error.message}`);
 
   if (current?.id && current.active) {
     try {
@@ -127,7 +137,7 @@ export async function ensurePlanPrice(
   }
 
   return {
-    key: plan.key,
+    key: row.key,
     price_usd: want / 100,
     action: current ? "rotated" : "created",
     stripe_price_id: fresh.id,
@@ -135,20 +145,38 @@ export async function ensurePlanPrice(
   };
 }
 
-/** Sync every active paid plan (or one specific plan key) and report what happened. */
+export async function ensurePlanPrice(stripe: Stripe, admin: SupabaseClient, plan: PlanRow): Promise<SyncResult> {
+  return ensureRowPrice(stripe, admin, "plans", plan, `CloutHook ${plan.name}`, true);
+}
+
+export async function ensurePackPrice(stripe: Stripe, admin: SupabaseClient, pack: PackRow): Promise<SyncResult> {
+  return ensureRowPrice(stripe, admin, "token_packs", pack, `CloutHook Tokens — ${pack.name} (${pack.tokens})`, false);
+}
+
+/** Sync every active paid plan + token pack (or one specific key) and report. */
 export async function syncPlans(
   stripe: Stripe,
   admin: SupabaseClient,
   onlyKey?: string,
 ): Promise<SyncResult[]> {
-  let q = admin.from("plans").select("key,name,price_usd,monthly_tokens,active,stripe_price_id,stripe_product_id");
-  q = onlyKey ? q.eq("key", onlyKey) : q.eq("active", true).gt("price_usd", 0);
-  const { data: rows, error } = await q;
-  if (error) throw new Error(error.message);
   const out: SyncResult[] = [];
-  for (const row of rows ?? []) {
+
+  let pq = admin.from("plans").select("key,name,price_usd,monthly_tokens,active,stripe_price_id,stripe_product_id");
+  pq = onlyKey ? pq.eq("key", onlyKey) : pq.eq("active", true).gt("price_usd", 0);
+  const { data: planRows, error: pErr } = await pq;
+  if (pErr) throw new Error(pErr.message);
+  for (const row of planRows ?? []) {
     if (Number(row.price_usd) <= 0) continue; // free tier has no Stripe price
     out.push(await ensurePlanPrice(stripe, admin, row as PlanRow));
   }
+
+  let kq = admin.from("token_packs").select("key,name,price_usd,tokens,active,stripe_price_id,stripe_product_id");
+  kq = onlyKey ? kq.eq("key", onlyKey) : kq.eq("active", true);
+  const { data: packRows, error: kErr } = await kq;
+  if (kErr) throw new Error(kErr.message);
+  for (const row of packRows ?? []) {
+    out.push(await ensurePackPrice(stripe, admin, row as PackRow));
+  }
+
   return out;
 }

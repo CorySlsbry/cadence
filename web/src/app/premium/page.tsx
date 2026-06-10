@@ -18,11 +18,18 @@ function money(v: string | number): string {
 
 export default async function PremiumPage() {
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("plans")
-    .select("key,name,price_usd,monthly_tokens,features,sort")
-    .eq("active", true)
-    .order("sort");
+  const [{ data }, { data: packRows }] = await Promise.all([
+    admin
+      .from("plans")
+      .select("key,name,price_usd,monthly_tokens,features,sort")
+      .eq("active", true)
+      .order("sort"),
+    admin
+      .from("token_packs")
+      .select("key,name,tokens,price_usd,sort")
+      .eq("active", true)
+      .order("sort"),
+  ]);
 
   const tiers: Tier[] = (data ?? []).map((p) => {
     const paid = Number(p.price_usd) > 0;
@@ -38,5 +45,13 @@ export default async function PremiumPage() {
     };
   });
 
-  return <PremiumClient tiers={tiers} />;
+  const packs = (packRows ?? []).map((k) => ({
+    key: k.key,
+    name: k.name,
+    tokens: k.tokens,
+    price: money(k.price_usd),
+    perToken: `$${(Number(k.price_usd) / k.tokens).toFixed(2)}/scene`,
+  }));
+
+  return <PremiumClient tiers={tiers} packs={packs} />;
 }
