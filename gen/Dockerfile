@@ -1,7 +1,7 @@
 # cadence-gen: self-hosted generation on Cloud Run GPU (1x NVIDIA L4).
-# Cloud Run L4 hosts run driver 535.x (CUDA 12.2): cu12.8 wheels work via the
-# forward-compatibility package (cuda-compat-12-8) per Google's GPU docs.
-FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
+# Cloud Run L4 hosts run driver 535.x: cu126 wheels run natively via CUDA minor-version
+# compatibility (no forward-compat shim needed — the shim segfaulted on first kernel).
+FROM nvidia/cuda:12.6.3-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 \
     LD_LIBRARY_PATH=/usr/local/cuda/compat:/usr/local/cuda/lib64:$LD_LIBRARY_PATH \
@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update && apt-get install -y --no-install-recommends \
-      python3.11 python3.11-venv python3.11-distutils curl ffmpeg espeak-ng cuda-compat-12-8 \
+      python3.11 python3.11-venv python3.11-distutils curl ffmpeg espeak-ng \
     && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -20,7 +20,7 @@ COPY requirements.txt .
 # torch FIRST and EXCLUSIVELY from the cu128 index (--index-url, not --extra-index-url:
 # otherwise pip resolves PyPI's default cu13x wheel, which the L4 driver rejects).
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
-    python3.11 -m pip install --no-cache-dir torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128 && \
+    python3.11 -m pip install --no-cache-dir torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126 && \
     python3.11 -m pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
