@@ -5,6 +5,7 @@ transformers>=4.57
 accelerate>=1.2.0
 sentencepiece
 protobuf
+ftfy  # soft dep of diffusers' Wan prompt cleaner — NameError at inference without it
 fastapi>=0.115
 uvicorn[standard]>=0.32
 pillow>=10.4
