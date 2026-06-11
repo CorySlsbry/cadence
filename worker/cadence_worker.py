@@ -537,7 +537,10 @@ class Worker:
                         gen_url, gen_token, img_bytes,
                         prompt=f"{motion}. The characters and subject move naturally; "
                                f"subtle cinematic camera push; keep composition and style.",
-                        seconds=3.0, width=704, height=1280,
+                        # 2s loops seamlessly under captions; each extra second is ~3min
+                        # more L4 time per scene against the worker's 3600s job ceiling.
+                        seconds=float(os.environ.get("CADENCE_ANIMATE_SECONDS", "2.0")),
+                        width=704, height=1280,
                     )
                     clip_path = os.path.join(tmp, f"scene_motion_{k}.mp4")
                     with open(clip_path, "wb") as fh:
