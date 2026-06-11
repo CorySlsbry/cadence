@@ -33,7 +33,10 @@ class AssetLibrary:
 
     def __init__(self, supabase, gemini_key: str, *, user_id: str | None,
                  job_id: str | None = None, style: str = "photoreal",
-                 threshold: float = 0.86, timeout: float = 20.0) -> None:
+                 threshold: float = 0.92, timeout: float = 20.0) -> None:
+        # 0.92: sibling scenes of ONE video embed ~0.87-0.94 apart (shared topic +
+        # style boilerplate), so 0.86 made every scene reuse scene 0's image. Only
+        # near-identical prompts from PAST renders should match.
         self.supabase = supabase
         self.gemini_key = gemini_key
         self.user_id = user_id
@@ -42,6 +45,7 @@ class AssetLibrary:
         self.threshold = threshold
         self.timeout = timeout
         self._emb_cache: dict[str, list[float]] = {}
+        self._used_ids: set[str] = set()  # variety within one render is sacred
 
     def _embed(self, text: str) -> list[float]:
         if text in self._emb_cache:
@@ -76,12 +80,15 @@ class AssetLibrary:
         want_w, want_h = _ASPECT_SIZES.get(aspect, _ASPECT_SIZES["9x16"])
         portrait = want_h >= want_w
         for row in rows:
+            if row["id"] in self._used_ids:
+                continue  # one appearance per render — repeats read as a broken video
             w, h = row.get("width") or 0, row.get("height") or 0
             if w and h and ((h >= w) != portrait):
                 continue  # never stretch a landscape asset into a portrait slot
             data = self.supabase.storage.from_(_BUCKET).download(row["storage_path"])
             if not data or len(data) < 1000:
                 continue
+            self._used_ids.add(row["id"])
             try:
                 self.supabase.rpc("touch_scene_asset", {"p_id": row["id"]}).execute()
             except Exception:  # noqa: BLE001 - usage stats are best-effort
