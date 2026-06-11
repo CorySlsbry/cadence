@@ -498,7 +498,9 @@ class Worker:
             self._update(self._current_job_id, progress=0.5)
         style_override = SCENE_STYLES.get(scene_style)
         inserts = build_ai_broll(
-            words_out, dur, self._image_generator(ctrl.broll_quality, gkey, gbyok),
+            words_out, dur,
+            self._image_generator(ctrl.broll_quality, gkey, gbyok,
+                                  style=scene_style or "photoreal"),
             out_dir=out_dir, windows=windows, max_images=n,
             distiller=self._distiller(gkey),
             # A named art style replaces the photographic look — cinematography clauses
@@ -807,7 +809,28 @@ class Worker:
             print("[worker] WARN: ai_spend table unreachable; using local JSON ledger", flush=True)
             return CostLedger(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_spend.json"), cap)
 
-    def _image_generator(self, quality: str = "standard", gemini_key: str | None = None, is_byok: bool = False):
+    def _image_generator(self, quality: str = "standard", gemini_key: str | None = None,
+                         is_byok: bool = False, style: str = "photoreal"):
+        """The provider chain wrapped in the scene asset library: a same-style prompt
+        match at >=0.86 cosine reuses a stored image (0 tokens, $0) instead of
+        regenerating. No Gemini key (no embeddings) or stub provider → raw chain."""
+        gen = self._raw_image_generator(quality, gemini_key, is_byok)
+        if (os.environ.get("CADENCE_ASSET_LIBRARY", "1") == "0" or not gemini_key
+                or getattr(gen, "name", "") == "stub"):
+            return gen
+        try:
+            from cadence.imagegen.cache import CachingGenerator
+
+            from asset_library import AssetLibrary
+
+            lib = AssetLibrary(self.supabase, gemini_key, user_id=self._current_user_id,
+                               job_id=self._current_job_id, style=style)
+            return CachingGenerator(gen, lookup=lib.lookup, save=lib.save)
+        except Exception as exc:  # noqa: BLE001 - the library is an optimization only
+            print(f"[worker] asset library unavailable ({exc}); generating directly", flush=True)
+            return gen
+
+    def _raw_image_generator(self, quality: str = "standard", gemini_key: str | None = None, is_byok: bool = False):
         """Pick the best available, budget-capped generator: Imagen (Gemini key) →
         Ideogram (key) → free stub. ``quality`` (fast|standard|ultra) picks the Imagen tier.
         A BYOK user spends their own Gemini quota, so they skip the shared ai_spend cap (ledger=None)."""
