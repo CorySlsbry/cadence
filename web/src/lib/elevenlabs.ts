@@ -73,6 +73,24 @@ export async function ttsMp3(key: string, voiceId: string, text: string): Promis
   return Buffer.from(await res.arrayBuffer());
 }
 
+/** Per-line dialogue TTS → raw 24kHz s16le PCM (concatenates cleanly across voices). */
+export async function ttsPcm24k(key: string, voiceId: string, text: string): Promise<Buffer> {
+  const res = await fetch(`${API}/text-to-speech/${voiceId}?output_format=pcm_24000`, {
+    method: "POST",
+    headers: { "xi-api-key": key, "content-type": "application/json" },
+    body: JSON.stringify({
+      text,
+      model_id: "eleven_multilingual_v2",
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`elevenlabs tts ${res.status}: ${detail.slice(0, 300)}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 /** Instant voice clone from one or more samples. Returns the new voice id. */
 export async function cloneVoice(key: string, name: string, files: File[]): Promise<string> {
   const form = new FormData();

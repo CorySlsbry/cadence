@@ -36,7 +36,14 @@ const LOOKS = [
 
 type LookKey = (typeof LOOKS)[number][0];
 
+// Style tiles live in the public assets bucket → swappable without a deploy.
+const TILE_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/assets/styles`;
+
 type ElVoice = { voice_id: string; name: string; category: string; preview_url: string | null };
+
+// Encoded voice value for the cast selects: "g:Charon" | "e:<voiceId>:<name>"
+type CastChar = { desc: string; v: string };
+const castProvider = (v: string) => (v.startsWith("e:") ? "elevenlabs" : "gemini");
 
 type VoiceSel =
   | { provider: "gemini"; id: string }
@@ -110,6 +117,9 @@ export function FacelessClient() {
   const [topic, setTopic] = useState("");
   const [script, setScript] = useState("");
   const [voiceSel, setVoiceSel] = useState<VoiceSel>({ provider: "gemini", id: "Charon" });
+  const [castMode, setCastMode] = useState<"single" | "duo">("single");
+  const [charA, setCharA] = useState<CastChar>({ desc: "", v: "g:Charon" });
+  const [charB, setCharB] = useState<CastChar>({ desc: "", v: "g:Leda" });
   const [look, setLook] = useState<LookKey>("cinematic");
   const [direction, setDirection] = useState("");
   const [lengthSec, setLengthSec] = useState<"30" | "60" | "90">("60");
@@ -259,6 +269,23 @@ export function FacelessClient() {
     setError(null);
     setBusy(true);
     try {
+      const castPayload =
+        castMode === "duo"
+          ? {
+              mode: "dialogue" as const,
+              characters: [charA, charB].map((c) => {
+                const el = c.v.startsWith("e:");
+                const [, id, ...nm] = c.v.split(":");
+                return {
+                  description: c.desc.trim(),
+                  voiceProvider: el ? ("elevenlabs" as const) : ("gemini" as const),
+                  voice: el ? undefined : id,
+                  voiceId: el ? id : undefined,
+                  voiceName: el ? nm.join(":") : id,
+                };
+              }),
+            }
+          : { mode: "single" as const };
       const r = await fetch("/api/faceless", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -273,6 +300,7 @@ export function FacelessClient() {
           sceneDirection: direction.trim(),
           lengthSec: Number(lengthSec),
           resolution,
+          ...castPayload,
         }),
       });
       const data = await r.json();
@@ -292,7 +320,12 @@ export function FacelessClient() {
     setJobId(null); setJob(null); setVideoUrl(null); setTitle(""); setError(null);
   }
 
-  const inputOk = mode === "topic" ? topic.trim().length > 2 : script.trim().length > 20;
+  const duoOk =
+    castMode === "single" ||
+    (charA.desc.trim().length > 2 &&
+      charB.desc.trim().length > 2 &&
+      castProvider(charA.v) === castProvider(charB.v));
+  const inputOk = (mode === "topic" ? topic.trim().length > 2 : script.trim().length > 20) && duoOk;
   const clonedVoices = elVoices.filter((v) => v.category !== "premade");
   const premadeVoices = elVoices.filter((v) => v.category === "premade");
 
@@ -332,6 +365,52 @@ export function FacelessClient() {
             />
           )}
 
+          <Seg label="Narration" value={castMode}
+            options={[["single", "Single narrator"], ["duo", "Two characters (dialogue)"]] as const}
+            onChange={setCastMode} />
+
+          {castMode === "duo" && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {([["A", charA, setCharA], ["B", charB, setCharB]] as const).map(([label, ch, setCh]) => (
+                <div key={label} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                  <p className="text-sm font-semibold">Character {label}</p>
+                  <input
+                    value={ch.desc}
+                    onChange={(e) => setCh({ ...ch, desc: e.target.value.slice(0, 160) })}
+                    placeholder={label === "A" ? "e.g. a wise old clay owl professor" : "e.g. a curious young clay robot"}
+                    className="mt-2 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none transition focus:border-[var(--accent)]/60"
+                  />
+                  <select
+                    value={ch.v}
+                    onChange={(e) => setCh({ ...ch, v: e.target.value })}
+                    className="mt-2 w-full rounded-lg border border-white/10 bg-[var(--surface)] px-3 py-2 text-sm text-white outline-none transition focus:border-[var(--accent)]/60"
+                  >
+                    <optgroup label="Studio voices">
+                      {VOICES.map((v) => (
+                        <option key={v.id} value={`g:${v.id}`}>{v.name} — {v.vibe}</option>
+                      ))}
+                    </optgroup>
+                    {elConnected && elVoices.length > 0 && (
+                      <optgroup label="Your ElevenLabs voices">
+                        {elVoices.map((v) => (
+                          <option key={v.voice_id} value={`e:${v.voice_id}:${v.name}`}>
+                            {v.name}{v.category !== "premade" ? " ✦" : ""}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
+          {castMode === "duo" && castProvider(charA.v) !== castProvider(charB.v) && (
+            <p className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-200">
+              Both characters need voices from the same provider (both Studio, or both ElevenLabs).
+            </p>
+          )}
+
+          {castMode === "single" && (<>
           <div>
             <p className="mb-1.5 text-xs font-medium text-white/65">Studio voices <span className="text-white/35">— tap ▶ to hear</span></p>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -454,26 +533,44 @@ export function FacelessClient() {
               </div>
             )}
           </div>
+          </>)}
 
           <div>
-            <p className="mb-1.5 text-xs font-medium text-white/65">Look</p>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-              {LOOKS.map(([key, label, hint]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setLook(key)}
-                  aria-pressed={look === key}
-                  className={`press rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                    look === key
-                      ? "border-[var(--accent)]/60 bg-[var(--accent)]/15"
-                      : "border-white/10 bg-white/[0.03] hover:bg-white/5"
-                  }`}
-                >
-                  <span className="block text-sm font-semibold">{label}</span>
-                  <span className="block text-xs text-white/50">{hint}</span>
-                </button>
-              ))}
+            <p className="mb-1.5 text-xs font-medium text-white/65">
+              Look <span className="text-white/35">— every AI scene renders in this style</span>
+            </p>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {LOOKS.map(([key, label, hint]) => {
+                const active = look === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setLook(key)}
+                    aria-pressed={active}
+                    title={hint}
+                    className={`press group relative aspect-square overflow-hidden rounded-xl border text-left transition-all ${
+                      active
+                        ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/40 shadow-[0_0_24px_rgba(110,123,255,0.25)]"
+                        : "border-white/10 hover:border-white/30"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`${TILE_BASE}/${key}.jpg`}
+                      alt={`${label} style example`}
+                      loading="lazy"
+                      className={`absolute inset-0 h-full w-full object-cover transition duration-300 ${
+                        active ? "scale-105" : "group-hover:scale-105 opacity-90 group-hover:opacity-100"
+                      }`}
+                    />
+                    <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 pb-1.5 pt-6 text-xs font-semibold text-white">
+                      {label}
+                      {active && <span className="ml-1 text-[var(--accent)]">✓</span>}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -508,7 +605,11 @@ export function FacelessClient() {
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-white/45">
               ≈ {scenes} AI scenes · {scenes} tokens
-              {voiceSel.provider === "elevenlabs" && " · voiced as " + ("name" in voiceSel ? voiceSel.name : "your clone")}
+              {castMode === "duo"
+                ? " · two-voice dialogue"
+                : voiceSel.provider === "elevenlabs"
+                  ? " · voiced as " + ("name" in voiceSel ? voiceSel.name : "your clone")
+                  : ""}
             </p>
             <Button onClick={generate} disabled={busy || !inputOk} className="min-w-44">
               {busy ? "Writing & voicing…" : "Generate video"}
