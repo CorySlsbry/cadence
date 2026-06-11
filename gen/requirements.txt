@@ -1,5 +1,5 @@
---extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.12.0
+# torch is installed separately in the Dockerfile from the cu128 index — keep it out
+# of this file so pip can never resolve the default-PyPI (newer-CUDA) wheel instead.
 diffusers==0.38.0
 transformers>=4.57
 accelerate>=1.2.0

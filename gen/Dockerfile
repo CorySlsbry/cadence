@@ -17,7 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
 
 WORKDIR /app
 COPY requirements.txt .
+# torch FIRST and EXCLUSIVELY from the cu128 index (--index-url, not --extra-index-url:
+# otherwise pip resolves PyPI's default cu13x wheel, which the L4 driver rejects).
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
+    python3.11 -m pip install --no-cache-dir torch==2.12.0 --index-url https://download.pytorch.org/whl/cu128 && \
     python3.11 -m pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
