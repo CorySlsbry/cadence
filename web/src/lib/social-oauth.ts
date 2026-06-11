@@ -10,8 +10,9 @@
 //   secrets (Secret Manager / env): CADENCE_<PLATFORM>_CLIENT_ID / _CLIENT_SECRET
 import { createHash, createHmac, randomBytes } from "crypto";
 
-export type SocialPlatform = "youtube" | "tiktok" | "instagram" | "x";
-export const SOCIAL_PLATFORMS: readonly SocialPlatform[] = ["youtube", "tiktok", "instagram", "x"] as const;
+export type SocialPlatform = "youtube" | "tiktok" | "instagram" | "x" | "linkedin" | "facebook";
+export const SOCIAL_PLATFORMS: readonly SocialPlatform[] =
+  ["youtube", "tiktok", "instagram", "x", "linkedin", "facebook"] as const;
 export function isSocialPlatform(p: string): p is SocialPlatform {
   return (SOCIAL_PLATFORMS as readonly string[]).includes(p);
 }
@@ -200,6 +201,76 @@ export const SOCIAL: Record<SocialPlatform, PlatformCfg> = {
       const r = await fetch("https://api.x.com/2/users/me", { headers: { authorization: `Bearer ${access}` } });
       const j = await r.json().catch(() => ({}));
       return { id: j?.data?.id, username: j?.data?.username };
+    },
+  },
+
+  // --- LinkedIn (OAuth 2.0 auth-code; 60-day member tokens, no refresh on standard tier) -----
+  linkedin: {
+    label: "LinkedIn",
+    configured: () => has("CADENCE_LINKEDIN_CLIENT_ID", "CADENCE_LINKEDIN_CLIENT_SECRET"),
+    pkce: false,
+    authorizeUrl: (state) =>
+      "https://www.linkedin.com/oauth/v2/authorization?" +
+      new URLSearchParams({
+        client_id: env("CADENCE_LINKEDIN_CLIENT_ID"),
+        redirect_uri: redirectUri("linkedin"),
+        response_type: "code",
+        scope: "openid profile w_member_social",
+        state,
+      }).toString(),
+    exchangeToken: async (code) => {
+      const j = await postForm("https://www.linkedin.com/oauth/v2/accessToken", {
+        grant_type: "authorization_code", code,
+        client_id: env("CADENCE_LINKEDIN_CLIENT_ID"), client_secret: env("CADENCE_LINKEDIN_CLIENT_SECRET"),
+        redirect_uri: redirectUri("linkedin"),
+      });
+      return { access: j.access_token as string, refresh: (j.refresh_token as string) ?? null,
+               expiresIn: (j.expires_in as number) ?? null, scopes: (j.scope as string) ?? null };
+    },
+    userInfo: async (access) => {
+      const r = await fetch("https://api.linkedin.com/v2/userinfo", { headers: { authorization: `Bearer ${access}` } });
+      const j = await r.json().catch(() => ({}));
+      return { id: j.sub, username: j.name };
+    },
+  },
+
+  // --- Facebook (FB Login for Pages; short user token -> long-lived; page tokens at publish) -
+  facebook: {
+    label: "Facebook",
+    configured: () => has("CADENCE_FACEBOOK_CLIENT_ID", "CADENCE_FACEBOOK_CLIENT_SECRET"),
+    pkce: false,
+    authorizeUrl: (state) =>
+      "https://www.facebook.com/v23.0/dialog/oauth?" +
+      new URLSearchParams({
+        client_id: env("CADENCE_FACEBOOK_CLIENT_ID"),
+        redirect_uri: redirectUri("facebook"),
+        response_type: "code",
+        scope: "pages_show_list,pages_manage_posts,pages_read_engagement,business_management",
+        state,
+      }).toString(),
+    exchangeToken: async (code) => {
+      const shortRes = await fetch("https://graph.facebook.com/v23.0/oauth/access_token?" + new URLSearchParams({
+        client_id: env("CADENCE_FACEBOOK_CLIENT_ID"), client_secret: env("CADENCE_FACEBOOK_CLIENT_SECRET"),
+        redirect_uri: redirectUri("facebook"), code,
+      }).toString());
+      const short = (await shortRes.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!shortRes.ok || !short.access_token) {
+        throw new Error(`token exchange failed (${shortRes.status}): ${JSON.stringify(short).slice(0, 200)}`);
+      }
+      const longRes = await fetch("https://graph.facebook.com/v23.0/oauth/access_token?" + new URLSearchParams({
+        grant_type: "fb_exchange_token", client_id: env("CADENCE_FACEBOOK_CLIENT_ID"),
+        client_secret: env("CADENCE_FACEBOOK_CLIENT_SECRET"), fb_exchange_token: short.access_token as string,
+      }).toString());
+      const long = (await longRes.json().catch(() => ({}))) as Record<string, unknown>;
+      const access = (long.access_token as string) || (short.access_token as string);
+      return { access, refresh: null,
+               expiresIn: (long.expires_in as number) ?? (short.expires_in as number) ?? null,
+               scopes: "pages_manage_posts" };
+    },
+    userInfo: async (access) => {
+      const r = await fetch("https://graph.facebook.com/v23.0/me?fields=id,name&access_token=" + encodeURIComponent(access));
+      const j = await r.json().catch(() => ({}));
+      return { id: j.id, username: j.name };
     },
   },
 };

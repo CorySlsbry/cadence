@@ -151,8 +151,8 @@ export function FacelessClient() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [publishBusy, setPublishBusy] = useState(false);
-  const [publishUrl, setPublishUrl] = useState<string | null>(null);
+  const [publishBusy, setPublishBusy] = useState<string | null>(null); // platform mid-post
+  const [publishUrls, setPublishUrls] = useState<Record<string, string>>({});
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
@@ -229,24 +229,24 @@ export function FacelessClient() {
     fetch(`/api/avatar?id=${id}`, { method: "DELETE" }).catch(() => {});
   }
 
-  async function publishToX() {
+  async function publishTo(platform: string, label: string) {
     if (!jobId) return;
-    setPublishBusy(true);
+    setPublishBusy(platform);
     setPublishMsg(null);
     try {
       const r = await fetch("/api/social/publish", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ platform: "x", jobId, caption: title.slice(0, 280) }),
+        body: JSON.stringify({ platform, jobId, caption: title.slice(0, 280) }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "publish failed");
-      setPublishUrl(d.url ?? null);
-      setPublishMsg("Live on X.");
+      if (d.url) setPublishUrls((p) => ({ ...p, [platform]: d.url }));
+      setPublishMsg(d.note ?? `Live on ${label}.`);
     } catch (e) {
       setPublishMsg(e instanceof Error ? e.message : "publish failed");
     } finally {
-      setPublishBusy(false);
+      setPublishBusy(null);
     }
   }
 
@@ -820,19 +820,29 @@ export function FacelessClient() {
             <Button variant="outline" onClick={reset}>Make another</Button>
           </div>
           <div className="mx-auto max-w-[320px]">
-            <Button
-              variant="outline"
-              className="w-full"
-              disabled={publishBusy}
-              onClick={publishToX}
-            >
-              {publishBusy ? "Posting to X…" : publishUrl ? "Posted ✓ — post again" : "Post to X"}
-            </Button>
-            {publishUrl && (
-              <a href={publishUrl} target="_blank" rel="noreferrer" className="mt-1.5 block text-center text-xs text-[var(--accent)] underline-offset-2 hover:underline">
-                View your post on X
+            <p className="mb-1.5 text-center text-xs font-medium text-white/55">Post directly to</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([["x", "X"], ["instagram", "Instagram"], ["facebook", "Facebook"], ["linkedin", "LinkedIn"], ["youtube", "YouTube"]] as const).map(([p, label]) => (
+                <button
+                  key={p}
+                  type="button"
+                  disabled={publishBusy !== null}
+                  onClick={() => publishTo(p, label)}
+                  className={`press rounded-lg border px-2 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${
+                    publishUrls[p]
+                      ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
+                      : "border-white/10 bg-white/[0.03] text-white/80 hover:bg-white/5"
+                  }`}
+                >
+                  {publishBusy === p ? "Posting…" : publishUrls[p] ? `${label} ✓` : label}
+                </button>
+              ))}
+            </div>
+            {Object.entries(publishUrls).map(([p, url]) => (
+              <a key={p} href={url} target="_blank" rel="noreferrer" className="mt-1.5 block text-center text-xs text-[var(--accent)] underline-offset-2 hover:underline">
+                View your {p === "x" ? "X" : p} post
               </a>
-            )}
+            ))}
             {publishMsg && <p className="mt-1.5 text-center text-xs text-white/55">{publishMsg}</p>}
           </div>
         </div>

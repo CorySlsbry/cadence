@@ -12,10 +12,144 @@ import { SOCIAL, type SocialPlatform } from "@/lib/social-oauth";
 export const maxDuration = 300; // video upload + processing poll
 
 const Body = z.object({
-  platform: z.enum(["x", "youtube"]),
+  platform: z.enum(["x", "youtube", "linkedin", "facebook", "instagram"]),
   jobId: z.string().uuid(),
   caption: z.string().max(280).default(""),
 });
+
+const LI_HEADERS = (access: string) => ({
+  authorization: `Bearer ${access}`,
+  "LinkedIn-Version": "202505",
+  "X-Restli-Protocol-Version": "2.0.0",
+  "content-type": "application/json",
+});
+
+async function linkedinPublish(access: string, personId: string, video: Buffer, caption: string): Promise<string> {
+  const owner = `urn:li:person:${personId}`;
+  const initRes = await fetch("https://api.linkedin.com/rest/videos?action=initializeUpload", {
+    method: "POST",
+    headers: LI_HEADERS(access),
+    body: JSON.stringify({ initializeUploadRequest: {
+      owner, fileSizeBytes: video.length, uploadCaptions: false, uploadThumbnail: false,
+    } }),
+  });
+  const init = await initRes.json().catch(() => ({}));
+  const videoUrn: string | undefined = init?.value?.video;
+  const parts: { uploadUrl: string; firstByte: number; lastByte: number }[] =
+    init?.value?.uploadInstructions ?? [];
+  if (!initRes.ok || !videoUrn || parts.length === 0) {
+    throw new Error(`LinkedIn upload init failed (${initRes.status}): ${JSON.stringify(init).slice(0, 200)}`);
+  }
+  const etags: string[] = [];
+  for (const p of parts) {
+    const r = await fetch(p.uploadUrl, {
+      method: "PUT",
+      headers: { "content-type": "application/octet-stream" },
+      body: Uint8Array.from(video.subarray(p.firstByte, p.lastByte + 1)),
+    });
+    if (!r.ok) throw new Error(`LinkedIn upload part failed (${r.status})`);
+    const etag = r.headers.get("etag");
+    if (etag) etags.push(etag);
+  }
+  const finRes = await fetch("https://api.linkedin.com/rest/videos?action=finalizeUpload", {
+    method: "POST",
+    headers: LI_HEADERS(access),
+    body: JSON.stringify({ finalizeUploadRequest: { video: videoUrn, uploadToken: "", uploadedPartIds: etags } }),
+  });
+  if (!finRes.ok) {
+    const t = await finRes.text().catch(() => "");
+    throw new Error(`LinkedIn finalize failed (${finRes.status}): ${t.slice(0, 200)}`);
+  }
+  // Wait for transcode before posting (posting an unprocessed video 404s).
+  const deadline = Date.now() + 180_000;
+  for (;;) {
+    const st = await fetch(`https://api.linkedin.com/rest/videos/${encodeURIComponent(videoUrn)}`, {
+      headers: LI_HEADERS(access),
+    });
+    const sj = await st.json().catch(() => ({}));
+    if (sj.status === "AVAILABLE") break;
+    if (sj.status === "PROCESSING_FAILED") throw new Error("LinkedIn rejected the video during processing");
+    if (Date.now() > deadline) throw new Error("LinkedIn video processing timed out");
+    await new Promise((res) => setTimeout(res, 4000));
+  }
+  const postRes = await fetch("https://api.linkedin.com/rest/posts", {
+    method: "POST",
+    headers: LI_HEADERS(access),
+    body: JSON.stringify({
+      author: owner,
+      commentary: caption || "New video",
+      visibility: "PUBLIC",
+      distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+      content: { media: { id: videoUrn, title: (caption || "CloutHook short").slice(0, 60) } },
+      lifecycleState: "PUBLISHED",
+      isReshareDisabledByAuthor: false,
+    }),
+  });
+  const postUrn = postRes.headers.get("x-restli-id");
+  if (!postRes.ok || !postUrn) {
+    const t = await postRes.text().catch(() => "");
+    throw new Error(`LinkedIn post failed (${postRes.status}): ${t.slice(0, 200)}`);
+  }
+  return `https://www.linkedin.com/feed/update/${postUrn}/`;
+}
+
+async function facebookPublish(userToken: string, video: Buffer, caption: string): Promise<string> {
+  const pagesRes = await fetch(
+    "https://graph.facebook.com/v23.0/me/accounts?fields=id,name,access_token&access_token=" +
+      encodeURIComponent(userToken),
+  );
+  const pages = await pagesRes.json().catch(() => ({}));
+  const page = pages?.data?.[0];
+  if (!pagesRes.ok || !page?.access_token) {
+    throw new Error("no Facebook Page on this account — posting goes to a Page you manage");
+  }
+  const form = new FormData();
+  form.set("description", caption);
+  form.set("access_token", page.access_token);
+  form.set("source", new Blob([Uint8Array.from(video)], { type: "video/mp4" }), "video.mp4");
+  const upRes = await fetch(`https://graph-video.facebook.com/v23.0/${page.id}/videos`, {
+    method: "POST",
+    body: form,
+  });
+  const up = await upRes.json().catch(() => ({}));
+  if (!upRes.ok || !up.id) {
+    throw new Error(`Facebook upload failed (${upRes.status}): ${JSON.stringify(up).slice(0, 200)}`);
+  }
+  return `https://www.facebook.com/watch/?v=${up.id}`;
+}
+
+async function instagramPublish(access: string, igUserId: string, videoUrl: string, caption: string): Promise<string> {
+  const createRes = await fetch(`https://graph.instagram.com/v23.0/${igUserId}/media?` + new URLSearchParams({
+    media_type: "REELS", video_url: videoUrl, caption, access_token: access,
+  }).toString(), { method: "POST" });
+  const created = await createRes.json().catch(() => ({}));
+  if (!createRes.ok || !created.id) {
+    throw new Error(`Instagram container failed (${createRes.status}): ${JSON.stringify(created).slice(0, 200)}`);
+  }
+  const deadline = Date.now() + 240_000;
+  for (;;) {
+    const st = await fetch(
+      `https://graph.instagram.com/v23.0/${created.id}?fields=status_code&access_token=${encodeURIComponent(access)}`,
+    );
+    const sj = await st.json().catch(() => ({}));
+    if (sj.status_code === "FINISHED") break;
+    if (sj.status_code === "ERROR") throw new Error("Instagram rejected the video during processing");
+    if (Date.now() > deadline) throw new Error("Instagram processing timed out");
+    await new Promise((res) => setTimeout(res, 5000));
+  }
+  const pubRes = await fetch(`https://graph.instagram.com/v23.0/${igUserId}/media_publish?` + new URLSearchParams({
+    creation_id: created.id, access_token: access,
+  }).toString(), { method: "POST" });
+  const pub = await pubRes.json().catch(() => ({}));
+  if (!pubRes.ok || !pub.id) {
+    throw new Error(`Instagram publish failed (${pubRes.status}): ${JSON.stringify(pub).slice(0, 200)}`);
+  }
+  const permRes = await fetch(
+    `https://graph.instagram.com/v23.0/${pub.id}?fields=permalink&access_token=${encodeURIComponent(access)}`,
+  );
+  const perm = await permRes.json().catch(() => ({}));
+  return (perm.permalink as string) || "https://www.instagram.com/";
+}
 
 const X_UPLOAD = "https://api.x.com/2/media/upload";
 const CHUNK = 4 * 1024 * 1024;
@@ -135,7 +269,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient();
   const { data: conn } = await admin
     .from("social_connections")
-    .select("id, access_token_enc, refresh_token_enc, expires_at, username")
+    .select("id, access_token_enc, refresh_token_enc, expires_at, username, platform_user_id")
     .eq("user_id", user.id)
     .eq("platform", platform)
     .single();
@@ -185,6 +319,29 @@ export async function POST(req: Request) {
         url: `https://youtube.com/watch?v=${videoId}`,
         note: "uploaded as private — set visibility in YouTube Studio",
       });
+    }
+    if (platform === "linkedin") {
+      if (!conn.platform_user_id) {
+        return NextResponse.json({ error: "reconnect LinkedIn to refresh your profile id" }, { status: 409 });
+      }
+      const url = await linkedinPublish(access, conn.platform_user_id, video, caption);
+      return NextResponse.json({ ok: true, url });
+    }
+    if (platform === "facebook") {
+      const url = await facebookPublish(access, video, caption);
+      return NextResponse.json({ ok: true, url });
+    }
+    if (platform === "instagram") {
+      if (!conn.platform_user_id) {
+        return NextResponse.json({ error: "reconnect Instagram to refresh your account id" }, { status: 409 });
+      }
+      // Instagram pulls the video from a URL — hand it a 1h signed link to the render.
+      const { data: signed } = await admin.storage.from("outputs").createSignedUrl(job.output_path, 3600);
+      if (!signed?.signedUrl) {
+        return NextResponse.json({ error: "could not stage the video for Instagram" }, { status: 500 });
+      }
+      const url = await instagramPublish(access, conn.platform_user_id, signed.signedUrl, caption);
+      return NextResponse.json({ ok: true, url });
     }
     const mediaId = await xUploadVideo(access, video);
     const postRes = await fetch("https://api.x.com/2/tweets", {
