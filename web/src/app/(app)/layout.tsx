@@ -30,7 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen flex-col">
       <TopNav email={user.email ?? ""} tokens={(tokens as number) ?? 0} />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
+      <main className="page-enter mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
       <FeedbackWidget />
     </div>
   );
