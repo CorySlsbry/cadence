@@ -40,6 +40,7 @@ const Body = z.object({
   style: z.enum(["cinematic", "cinematic_film", "clean_ugc"]).default("cinematic"),
   sceneStyle: z.string().max(24).default("cinematic"),
   sceneDirection: z.string().max(400).default(""),
+  animate: z.boolean().default(false),
   resolution: z.enum(["1080p", "4k"]).default("1080p"),
   projectId: z.string().uuid().nullable().optional(),
 });
@@ -318,6 +319,7 @@ Return STRICT JSON: {"title": "scroll-stopping title (max 70 chars)", "body": "t
           topic: title,
           scene_style: SCENE_STYLES.has(body.sceneStyle) ? body.sceneStyle : "cinematic",
           scene_direction: sceneDirection,
+          animate: body.animate,
           ...(duo
             ? { cast: duo.map((c) => ({ description: c.description, voice: c.voiceName ?? c.voice ?? c.voiceId })) }
             : {}),

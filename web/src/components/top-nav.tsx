@@ -27,6 +27,9 @@ export function TopNav({ email, tokens }: { email: string; tokens: number }) {
           <Link href="/outliers" className="nav-link hidden sm:inline">
             Outliers
           </Link>
+          <Link href="/dashboard" className="nav-link hidden sm:inline">
+            Studio
+          </Link>
           <Link href="/faceless" className="nav-link hidden sm:inline">
             Faceless
           </Link>
@@ -68,6 +71,9 @@ export function TopNav({ email, tokens }: { email: string; tokens: number }) {
             <div className="absolute right-0 top-12 z-30 w-56 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-1.5 shadow-2xl">
               <Link href="/outliers" className="block rounded-lg px-3 py-3 text-sm text-white/80 hover:bg-white/5">
                 Outliers
+              </Link>
+              <Link href="/dashboard" className="block rounded-lg px-3 py-3 text-sm text-white/80 hover:bg-white/5">
+                Studio
               </Link>
               <Link href="/faceless" className="block rounded-lg px-3 py-3 text-sm text-white/80 hover:bg-white/5">
                 Faceless

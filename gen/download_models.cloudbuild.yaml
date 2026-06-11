@@ -1,0 +1,46 @@
+# One-time: pull the self-hosted model weights from Hugging Face into our GCS bucket
+# (Cloud Build's network does in minutes what a home connection does in hours).
+# Models per the vetted stack: FLUX.2-klein-4B (Apache 2.0) + FastWan2.2-TI2V-5B (Apache 2.0)
+# + Kokoro ONNX files. Weights land in gs://${_BUCKET}/ for the cadence-gen GCS FUSE mount.
+steps:
+  - name: "python:3.11-slim"
+    id: download
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        pip install -q "huggingface_hub[hf_transfer]==0.36.0"
+        export HF_HUB_ENABLE_HF_TRANSFER=1
+        python - <<'PY'
+        from huggingface_hub import snapshot_download
+        snapshot_download("black-forest-labs/FLUX.2-klein-4B",
+                          local_dir="/workspace/models/flux2-klein-4b",
+                          ignore_patterns=["*.md", "*.gitattributes"])
+        print("flux2-klein-4b done", flush=True)
+        snapshot_download("FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers",
+                          local_dir="/workspace/models/fastwan22-ti2v-5b",
+                          ignore_patterns=["*.md", "*.gitattributes"])
+        print("fastwan22-ti2v-5b done", flush=True)
+        PY
+        mkdir -p /workspace/models/kokoro
+        apt-get update -qq && apt-get install -y -qq curl
+        curl -L -o /workspace/models/kokoro/kokoro-v1.0.onnx \
+          https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+        curl -L -o /workspace/models/kokoro/voices-v1.0.bin \
+          https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+        du -sh /workspace/models/*
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: upload
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud storage cp -r /workspace/models/* gs://${_BUCKET}/ && \
+        gcloud storage ls -l gs://${_BUCKET}/ | tail -5
+substitutions:
+  _BUCKET: cadence-gen-models-uscentral1
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 200
+timeout: 3600s

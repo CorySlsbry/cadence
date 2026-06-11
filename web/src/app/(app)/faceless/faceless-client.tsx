@@ -124,6 +124,7 @@ export function FacelessClient() {
   const [direction, setDirection] = useState("");
   const [lengthSec, setLengthSec] = useState<"30" | "60" | "90">("60");
   const [resolution, setResolution] = useState<"1080p" | "4k">("1080p");
+  const [sceneMode, setSceneMode] = useState<"stills" | "motion">("stills");
 
   // Voice previews — one shared audio element; whichever key is playing owns it.
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -300,6 +301,7 @@ export function FacelessClient() {
           sceneDirection: direction.trim(),
           lengthSec: Number(lengthSec),
           resolution,
+          animate: sceneMode === "motion",
           ...castPayload,
         }),
       });
@@ -596,6 +598,18 @@ export function FacelessClient() {
               onChange={setResolution} />
           </div>
 
+          <div>
+            <Seg label="Scenes" value={sceneMode}
+              options={[["stills", "Stills (cinematic push)"], ["motion", "Animated (AI motion)"]] as const}
+              onChange={setSceneMode} />
+            {sceneMode === "motion" && (
+              <p className="mt-1.5 text-xs text-white/45">
+                Every scene becomes a real motion clip on our own GPUs — characters and
+                camera genuinely move. 3 tokens per scene and a longer render.
+              </p>
+            )}
+          </div>
+
           {error && (
             <p className="rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300">
               {error}
@@ -604,7 +618,8 @@ export function FacelessClient() {
 
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-white/45">
-              ≈ {scenes} AI scenes · {scenes} tokens
+              ≈ {scenes} AI scenes · {sceneMode === "motion" ? scenes * 3 : scenes} tokens
+              {sceneMode === "motion" && " · animated"}
               {castMode === "duo"
                 ? " · two-voice dialogue"
                 : voiceSel.provider === "elevenlabs"

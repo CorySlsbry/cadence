@@ -211,6 +211,63 @@ def build_background_video(
     return out
 
 
+def build_background_video_mixed(
+    items,
+    duration: float,
+    out: str,
+    *,
+    ff: FFmpeg | None = None,
+    width: int = 1080,
+    height: int = 1920,
+    fps: int = 30,
+    zoom: float = 1.08,
+    crf: int = 20,
+) -> str:
+    """Like :func:`build_background_video`, but a scene may be a real MOTION CLIP.
+
+    ``items`` is ``[(insert, clip_path_or_None), ...]`` — when a clip exists the segment
+    plays AI motion (looped/trimmed to its window); when ``None`` it falls back to the
+    Ken-Burns still. "Animated scenes" therefore degrades gracefully per-scene instead
+    of all-or-nothing."""
+    ff = ff or FFmpeg()
+    by_image = {ins.image_path: clip for ins, clip in items}
+    segs = _background_segments([ins for ins, _ in items], duration)
+    if not segs:
+        raise ValueError("build_background_video_mixed: no usable segments")
+    args: list[str] = ["-y"]
+    chains: list[str] = []
+    labels: list[str] = []
+    for i, (img_path, seg_dur) in enumerate(segs):
+        clip = by_image.get(img_path)
+        if clip:
+            # Real motion: loop the clip to cover its window, normalize geometry + fps.
+            args += ["-stream_loop", "-1", "-t", f"{seg_dur:.3f}", "-i", clip]
+            chains.append(
+                f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height},setsar=1,fps={fps},trim=0:{seg_dur:.3f},"
+                f"setpts=PTS-STARTPTS[v{i}]"
+            )
+        else:
+            args += ["-loop", "1", "-t", f"{seg_dur:.3f}", "-i", img_path]
+            ramp = f"min(t/{max(seg_dur, 1.0):.2f}\\,1)"
+            factor = f"(1+{zoom - 1.0:.4f}*{ramp})"
+            sw = f"trunc(({width}*{factor})/2)*2"
+            chains.append(
+                f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height},setsar=1,fps={fps},"
+                f"scale=w={sw}:h=-2:eval=frame,crop={width}:{height}:(iw-{width})/2:(ih-{height})/2[v{i}]"
+            )
+        labels.append(f"[v{i}]")
+    graph = ";".join(chains) + ";" + "".join(labels) + f"concat=n={len(segs)}:v=1:a=0[outv]"
+    args += [
+        "-filter_complex", graph, "-map", "[outv]",
+        "-c:v", "libx264", "-preset", "medium", "-crf", str(crf),
+        "-pix_fmt", "yuv420p", "-r", str(fps), out,
+    ]
+    ff.run(args, timeout=2400)
+    return out
+
+
 def render_background_replaced(
     src: str,
     background_image: str | None = None,

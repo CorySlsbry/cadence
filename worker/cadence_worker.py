@@ -299,9 +299,12 @@ class Worker:
                 out_path = os.path.join(tmp, "final.mp4")
                 scene_style = str(fc.get("scene_style") or "") if isinstance(fc, dict) else ""
                 scene_direction = str(fc.get("scene_direction") or "")[:400] if isinstance(fc, dict) else ""
+                topic_title = str(fc.get("topic") or "")[:200] if isinstance(fc, dict) else ""
+                animate = bool(fc.get("animate")) if isinstance(fc, dict) else False
                 result, edl_f = self._render_faceless(
                     recording, ctrl, tmp, out_path, keys, music_path,
                     scene_style=scene_style, scene_direction=scene_direction,
+                    topic_title=topic_title, animate=animate,
                 )
                 output_key = f"{user_id}/{job_id}.mp4"
                 self._upload(OUTPUTS, output_key, out_path)
@@ -447,7 +450,8 @@ class Worker:
 
     def _render_faceless(self, audio_path: str, ctrl, tmp: str, out_path: str, keys=None,
                          music_path: str | None = None, scene_style: str = "",
-                         scene_direction: str = ""):
+                         scene_direction: str = "", topic_title: str = "",
+                         animate: bool = False):
         """Faceless render: narration audio -> ASR -> per-moment AI scenes (the existing
         contextual b-roll engine) stitched into a full-duration visual track + karaoke
         captions + optional hook card + ducked music. Returns (RenderResult, edl) — the
@@ -503,11 +507,51 @@ class Worker:
             factual_assets=None if style_override else self._factual_assets(),
             style_override=style_override,
             direction=scene_direction,
+            context_topic=topic_title,
         )
         if not inserts:
             raise RuntimeError("faceless: scene generation produced no images")
         bg = os.path.join(tmp, "scenes.mp4")
-        build_background_video(inserts, dur, bg, ff=self.ff, width=w, height=h, fps=fps)
+        gen_url = os.environ.get("CADENCE_GEN_URL")
+        gen_token = os.environ.get("CADENCE_GEN_TOKEN")
+        if animate and gen_url and gen_token:
+            # True motion: animate each scene on our GPU (FastWan i2v). Each animated
+            # scene meters 2 extra tokens; failures/budget keep that scene as a still.
+            from cadence.imagegen.ledger import BudgetExceeded
+            from cadence.imagegen.selfhost import animate_image
+            from cadence.matte.replace import build_background_video_mixed
+
+            anim_ledger = self._ledger(float(os.environ.get("CADENCE_AI_BUDGET_USD", "10")))
+            motion = SCENE_STYLES.get(scene_style, "cinematic photoreal")
+            items = []
+            for k, ins in enumerate(inserts):
+                clip_path = None
+                try:
+                    anim_ledger.charge(0.05)
+                    anim_ledger.charge(0.05)  # 2 tokens per animated scene
+                    with open(ins.image_path, "rb") as fh:
+                        img_bytes = fh.read()
+                    mp4 = animate_image(
+                        gen_url, gen_token, img_bytes,
+                        prompt=f"{motion}. The characters and subject move naturally; "
+                               f"subtle cinematic camera push; keep composition and style.",
+                        seconds=3.0, width=704, height=1280,
+                    )
+                    clip_path = os.path.join(tmp, f"scene_motion_{k}.mp4")
+                    with open(clip_path, "wb") as fh:
+                        fh.write(mp4)
+                    print(f"[worker] faceless: scene {k} animated ({len(mp4)//1024}KB)", flush=True)
+                except BudgetExceeded:
+                    print(f"[worker] faceless: token budget hit at scene {k}; rest stay stills", flush=True)
+                except Exception as exc:  # noqa: BLE001 - per-scene degradation to the still
+                    print(f"[worker] faceless: animate scene {k} failed ({exc!r}) -> still", flush=True)
+                items.append((ins, clip_path))
+                if self._current_job_id:
+                    self._update(self._current_job_id,
+                                 progress=round(0.55 + 0.25 * (k + 1) / len(inserts), 2))
+            build_background_video_mixed(items, dur, bg, ff=self.ff, width=w, height=h, fps=fps)
+        else:
+            build_background_video(inserts, dur, bg, ff=self.ff, width=w, height=h, fps=fps)
         if self._current_job_id:
             self._update(self._current_job_id, progress=0.8)
 
@@ -769,13 +813,26 @@ class Worker:
         A BYOK user spends their own Gemini quota, so they skip the shared ai_spend cap (ledger=None)."""
         cap = float(os.environ.get("CADENCE_AI_BUDGET_USD", "10"))
         ledger = None if is_byok else self._ledger(cap)
+        gen_url = os.environ.get("CADENCE_GEN_URL")
+        gen_token = os.environ.get("CADENCE_GEN_TOKEN")
         if gemini_key:
             from cadence.imagegen.imagen import QUALITY_MODELS, ImagenGenerator
 
             gen = ImagenGenerator(model=QUALITY_MODELS.get(quality), api_key=gemini_key, ledger=ledger)
             tag = "your key (byok)" if is_byok else f"shared budget ${cap:.2f}, spent ${ledger.spent():.2f}"
+            # Our own GPU first (40-60x cheaper, same token meter); Imagen as the safety net.
+            if gen_url and gen_token:
+                from cadence.imagegen.selfhost import SelfHostGenerator
+
+                print(f"[worker] AI b-roll via cadence-gen (selfhost, fallback Imagen {gen.model}, {tag})", flush=True)
+                return SelfHostGenerator(gen_url, gen_token, ledger=ledger, fallback=gen)
             print(f"[worker] AI b-roll via Imagen ({gen.model} '{quality}' ${gen.cost_per_image}/img, {tag})", flush=True)
             return gen
+        if gen_url and gen_token:
+            from cadence.imagegen.selfhost import SelfHostGenerator
+
+            print("[worker] AI b-roll via cadence-gen (selfhost, no fallback key)", flush=True)
+            return SelfHostGenerator(gen_url, gen_token, ledger=ledger)
         if os.environ.get("IDEOGRAM_API_KEY"):
             from cadence.imagegen.ideogram import IdeogramGenerator
 

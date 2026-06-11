@@ -188,6 +188,7 @@ def build_ai_broll(
     factual_assets: list | None = None,
     style_override: str | None = None,
     direction: str = "",
+    context_topic: str = "",
 ) -> list[BrollInsert]:
     """Generate a contextual, photoreal b-roll image for each cutaway window.
 
@@ -205,6 +206,12 @@ def build_ai_broll(
         windows = plan_broll_windows(output_duration, mode=mode)
     if max_images is not None:
         windows = windows[:max_images]
+    # Ground the distiller in the WHOLE video so every scene is specific to the real
+    # subject (named tools get depicted as themselves, ASR fixes use global context).
+    if distiller is not None and hasattr(distiller, "set_context"):
+        full_text = " ".join(w[0] for w in words_out)
+        distiller.set_context(topic=context_topic, full_text=full_text, direction=direction)
+    prev_scenes: list[str] = []
     inserts: list[BrollInsert] = []
     for idx, (start, end, motion) in enumerate(windows):
         window_text = raw_text_for_window(words_out, start, end)
@@ -229,7 +236,11 @@ def build_ai_broll(
                     print(f"[broll] factual asset unreadable ({fa.key}): {exc!r} -> AI fallback",
                           flush=True)
         if distiller is not None:
-            scene, caption = distiller.distill(window_text)
+            try:
+                scene, caption = distiller.distill(window_text, prev_scenes=prev_scenes)
+            except TypeError:  # older distillers without the prev_scenes kwarg
+                scene, caption = distiller.distill(window_text)
+            prev_scenes.append(scene)
             prompt = build_ai_prompt_scene(scene, caption, cine=cine, style_override=style_override)
         else:
             topic = topic_for_window(words_out, start, end) or "a clean modern workspace"
