@@ -498,10 +498,17 @@ class Worker:
         if self._current_job_id:
             self._update(self._current_job_id, progress=0.5)
         style_override = SCENE_STYLES.get(scene_style)
+        # Direction (esp. an avatar character sheet) changes what scenes must contain,
+        # so directed renders only reuse library assets saved under the SAME direction —
+        # a cached generic scene must never replace one starring the user's avatar.
+        lib_style = scene_style or "photoreal"
+        if scene_direction.strip():
+            import hashlib
+
+            lib_style = f"{lib_style}|d{hashlib.sha1(scene_direction.encode()).hexdigest()[:8]}"
         inserts = build_ai_broll(
             words_out, dur,
-            self._image_generator(ctrl.broll_quality, gkey, gbyok,
-                                  style=scene_style or "photoreal"),
+            self._image_generator(ctrl.broll_quality, gkey, gbyok, style=lib_style),
             out_dir=out_dir, windows=windows, max_images=n,
             distiller=self._distiller(gkey),
             # A named art style replaces the photographic look — cinematography clauses
