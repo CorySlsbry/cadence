@@ -27,7 +27,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 MODELS_DIR = os.environ.get("MODELS_DIR", "/models")
-GEN_TOKEN = os.environ.get("GEN_TOKEN", "")
+GEN_TOKEN = os.environ.get("GEN_TOKEN", "").strip()  # secrets can carry stray CR/LF
 
 app = FastAPI()
 
@@ -37,7 +37,7 @@ _kokoro = {"engine": None, "lock": threading.Lock()}
 
 
 def _auth(x_gen_token: str | None) -> None:
-    if not GEN_TOKEN or x_gen_token != GEN_TOKEN:
+    if not GEN_TOKEN or (x_gen_token or "").strip() != GEN_TOKEN:
         raise HTTPException(status_code=401, detail="bad token")
 
 

@@ -7,8 +7,12 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 \
     LD_LIBRARY_PATH=/usr/local/cuda/compat:/usr/local/cuda/lib64:$LD_LIBRARY_PATH \
     HF_HUB_OFFLINE=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3.11 python3.11-venv python3-pip ffmpeg espeak-ng cuda-compat-12-8 \
+# Ubuntu 22.04's apt python3.11 is the broken 3.11.0rc1 — use deadsnakes for a real 3.11.x.
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+      python3.11 python3.11-venv python3.11-distutils curl ffmpeg espeak-ng cuda-compat-12-8 \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
