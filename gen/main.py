@@ -103,25 +103,26 @@ def _get_kokoro():
 
 @app.on_event("startup")
 def _warmup() -> None:
-    def run():
-        try:
-            import torch
+    """Load + warm FLUX on the MAIN thread (uvicorn binds the port after startup
+    completes — the deploy's startup probe is configured to wait this out).
+    Loading the pipeline from a daemon thread trips torch's pinned-memory
+    primary-context bug (c10 'dummyHasPrimaryContext') and segfaults."""
+    try:
+        import torch
 
-            avail = torch.cuda.is_available()
-            print(f"[gen] cuda available={avail} torch={torch.__version__}", flush=True)
-            if avail:
-                torch.cuda.set_device(0)  # init the primary context in THIS thread
-                print(f"[gen] device={torch.cuda.get_device_name(0)}", flush=True)
-            with _gpu_lock:
-                pipe = _get_pipe("flux")
-                pipe("warmup frame, a simple gradient", num_inference_steps=1,
-                     guidance_scale=1.0, height=512, width=512)
-            _state["warm"] = True
-            print("[gen] flux warm", flush=True)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[gen] warmup failed: {exc!r}", flush=True)
-
-    threading.Thread(target=run, daemon=True).start()
+        avail = torch.cuda.is_available()
+        print(f"[gen] cuda available={avail} torch={torch.__version__}", flush=True)
+        if avail:
+            torch.cuda.set_device(0)
+            print(f"[gen] device={torch.cuda.get_device_name(0)}", flush=True)
+        with _gpu_lock:
+            pipe = _get_pipe("flux")
+            pipe("warmup frame, a simple gradient", num_inference_steps=1,
+                 guidance_scale=1.0, height=512, width=512)
+        _state["warm"] = True
+        print("[gen] flux warm", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[gen] warmup failed: {exc!r}", flush=True)
 
 
 @app.get("/healthz")
