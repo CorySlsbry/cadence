@@ -65,3 +65,40 @@ Env var names the code reads:
 - **Built + deployed:** the OAuth connect flow (start → consent → callback → encrypted token store), the `/connections` "Social accounts" UI, disconnect, and per-platform token exchange (incl. TikTok PKCE + Instagram long-lived exchange). Tokens live in `social_connections` (AES-256-GCM, service-role only).
 - **Pending (needs your apps):** mount each platform's `CADENCE_*` secrets (above) to flip the card from "Setup needed" → "Connect".
 - **Next phase (after connect works):** wire **publishing** through these direct connections (upload the rendered video via each platform's content API), so users can post without Blotato. That's a separate per-platform build (each posting API differs); the connections built here are the prerequisite.
+
+## X (added 2026-06-11)
+- developer.x.com → pay-per-use tier → create app → OAuth 2.0: **Web App (confidential)**.
+- Callback: `https://clouthook.com/api/social/oauth/x/callback` · Website: `https://clouthook.com`
+- Secrets: `CADENCE_X_CLIENT_ID` / `CADENCE_X_CLIENT_SECRET`
+- Scopes requested: tweet.read tweet.write users.read media.write offline.access (2h tokens, auto-refresh).
+- Publish: v2 chunked media upload + POST /2/tweets (live same-day; ~$0.015/post).
+
+## LinkedIn (added 2026-06-11)
+- linkedin.com/developers → create app (needs a LinkedIn **Company Page** to bind to) → request
+  **"Share on LinkedIn"** + **"Sign In with LinkedIn using OpenID Connect"** products (instant self-serve).
+- Callback: `https://clouthook.com/api/social/oauth/linkedin/callback`
+- Secrets: `CADENCE_LINKEDIN_CLIENT_ID` / `CADENCE_LINKEDIN_CLIENT_SECRET`
+- Tokens last 60 days, no refresh on the standard tier → users reconnect every ~2 months.
+- Publish: rest/videos initializeUpload → PUT parts → finalizeUpload → poll AVAILABLE → rest/posts.
+
+## Facebook (added 2026-06-11)
+- developers.facebook.com → create app (Business type) → add **Facebook Login for Business**.
+- Callback: `https://clouthook.com/api/social/oauth/facebook/callback`
+- Secrets: `CADENCE_FACEBOOK_CLIENT_ID` / `CADENCE_FACEBOOK_CLIENT_SECRET`
+- Scopes: pages_show_list, pages_manage_posts, pages_read_engagement, business_management —
+  Advanced Access for these needs Meta **App Review** (own pages work in Dev Mode immediately).
+- Publish: first managed Page via /me/accounts → graph-video /{page}/videos (page token).
+
+## Instagram (publish path added 2026-06-11; connect existed)
+- Same Meta app: add **Instagram API with Instagram Login** product.
+- Callback: `https://clouthook.com/api/social/oauth/instagram/callback`
+- Secrets: `CADENCE_INSTAGRAM_CLIENT_ID` / `CADENCE_INSTAGRAM_CLIENT_SECRET`
+- Account must be **Professional** (Business/Creator). App Review for instagram_business_content_publish.
+- Publish: Reels container from a 1h signed video URL → poll FINISHED → media_publish → permalink.
+
+## YouTube (publish path added 2026-06-11; connect existed)
+- console.cloud.google.com → OAuth client (Web) + enable **YouTube Data API v3**.
+- Callback: `https://clouthook.com/api/social/oauth/youtube/callback`
+- Secrets: `CADENCE_YOUTUBE_CLIENT_ID` / `CADENCE_YOUTUBE_CLIENT_SECRET`
+- Unverified app: uploads land **private** (flip in YouTube Studio). Start OAuth verification early (2-8 wks).
+- Publish: resumable upload, snippet+status, privacyStatus=private.
