@@ -298,7 +298,8 @@ class Worker:
             if fc and not job.get("plan"):
                 out_path = os.path.join(tmp, "final.mp4")
                 scene_style = str(fc.get("scene_style") or "") if isinstance(fc, dict) else ""
-                scene_direction = str(fc.get("scene_direction") or "")[:400] if isinstance(fc, dict) else ""
+                # 1400: an avatar character sheet (<=900) + user direction (<=400) + prefix.
+                scene_direction = str(fc.get("scene_direction") or "")[:1400] if isinstance(fc, dict) else ""
                 topic_title = str(fc.get("topic") or "")[:200] if isinstance(fc, dict) else ""
                 animate = bool(fc.get("animate")) if isinstance(fc, dict) else False
                 result, edl_f = self._render_faceless(

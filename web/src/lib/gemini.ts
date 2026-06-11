@@ -9,6 +9,8 @@ type GeminiOpts = {
   prompt: string;
   /** Optional image to include (e.g. an outlier thumbnail) for multimodal analysis. */
   imageUrl?: string;
+  /** Already-decoded images (e.g. user uploads) — base64 without a data: prefix. */
+  inlineImages?: { mime: string; data: string }[];
   temperature?: number;
 };
 
@@ -43,6 +45,9 @@ export async function geminiJson<T>(opts: GeminiOpts): Promise<T> {
     } catch {
       // Image fetch is best-effort — analysis proceeds text-only.
     }
+  }
+  for (const img of opts.inlineImages ?? []) {
+    parts.push({ inline_data: { mime_type: img.mime, data: img.data } });
   }
   parts.push({ text: opts.prompt });
 

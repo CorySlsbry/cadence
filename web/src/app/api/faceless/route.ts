@@ -40,6 +40,7 @@ const Body = z.object({
   style: z.enum(["cinematic", "cinematic_film", "clean_ugc"]).default("cinematic"),
   sceneStyle: z.string().max(24).default("cinematic"),
   sceneDirection: z.string().max(400).default(""),
+  avatarSheet: z.string().max(900).default(""), // character sheet from /api/avatar
   animate: z.boolean().default(false),
   resolution: z.enum(["1080p", "4k"]).default("1080p"),
   projectId: z.string().uuid().nullable().optional(),
@@ -290,6 +291,12 @@ Return STRICT JSON: {"title": "scroll-stopping title (max 70 chars)", "body": "t
 
   // Cast members appear in every scene: fold their descriptions into the direction.
   let sceneDirection = body.sceneDirection.trim();
+  const avatarSheet = body.avatarSheet.trim();
+  if (avatarSheet && !duo) {
+    sceneDirection =
+      `Every scene stars this exact recurring character (same person each time): ${avatarSheet}` +
+      (sceneDirection ? ` ${sceneDirection}` : "");
+  }
   if (duo) {
     const { buildCastDirection } = await import("@/lib/dialogue");
     sceneDirection = buildCastDirection(

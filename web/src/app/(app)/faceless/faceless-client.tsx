@@ -43,6 +43,7 @@ type ElVoice = { voice_id: string; name: string; category: string; preview_url: 
 
 // Encoded voice value for the cast selects: "g:Charon" | "e:<voiceId>:<name>"
 type CastChar = { desc: string; v: string };
+type AvatarChar = { id: string; name: string; sheet: string; photo_path: string | null };
 const castProvider = (v: string) => (v.startsWith("e:") ? "elevenlabs" : "gemini");
 
 type VoiceSel =
@@ -122,6 +123,11 @@ export function FacelessClient() {
   const [charB, setCharB] = useState<CastChar>({ desc: "", v: "g:Leda" });
   const [look, setLook] = useState<LookKey>("cinematic");
   const [direction, setDirection] = useState("");
+  const [avatars, setAvatars] = useState<AvatarChar[]>([]);
+  const [avatarSel, setAvatarSel] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+  const avatarFileRef = useRef<HTMLInputElement | null>(null);
   const [lengthSec, setLengthSec] = useState<"30" | "60" | "90">("60");
   const [resolution, setResolution] = useState<"1080p" | "4k">("1080p");
   const [sceneMode, setSceneMode] = useState<"stills" | "motion">("stills");
@@ -169,6 +175,56 @@ export function FacelessClient() {
       })
       .catch(() => setElConnected(false));
   }, []);
+
+  useEffect(() => {
+    fetch("/api/avatar")
+      .then((r) => r.json())
+      .then((d: { characters?: AvatarChar[] }) => setAvatars(d.characters ?? []))
+      .catch(() => {});
+  }, []);
+
+  async function createAvatar(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setAvatarBusy(true);
+    setAvatarMsg(null);
+    try {
+      const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
+      const picked = Array.from(files).filter((f) => allowed.has(f.type)).slice(0, 3);
+      if (picked.length === 0) throw new Error("use jpeg, png or webp photos");
+      const photos = await Promise.all(
+        picked.map(async (f) => {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(fr.result as string);
+            fr.onerror = () => reject(new Error("could not read file"));
+            fr.readAsDataURL(f);
+          });
+          return { mime: f.type, data: dataUrl.split(",")[1] ?? "" };
+        }),
+      );
+      const r = await fetch("/api/avatar", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ photos }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "could not create your avatar");
+      setAvatars((prev) => [d.character, ...prev]);
+      setAvatarSel(d.character.id);
+      setAvatarMsg("Avatar ready — it now stars in every scene.");
+    } catch (e) {
+      setAvatarMsg(e instanceof Error ? e.message : "could not create your avatar");
+    } finally {
+      setAvatarBusy(false);
+      if (avatarFileRef.current) avatarFileRef.current.value = "";
+    }
+  }
+
+  async function deleteAvatar(id: string) {
+    setAvatars((prev) => prev.filter((a) => a.id !== id));
+    if (avatarSel === id) setAvatarSel(null);
+    fetch(`/api/avatar?id=${id}`, { method: "DELETE" }).catch(() => {});
+  }
 
   useEffect(() => {
     if (!jobId) return;
@@ -299,6 +355,10 @@ export function FacelessClient() {
           style: look === "film" ? "cinematic_film" : look === "clean" ? "clean_ugc" : "cinematic",
           sceneStyle: look,
           sceneDirection: direction.trim(),
+          avatarSheet:
+            castMode === "single" && avatarSel
+              ? avatars.find((a) => a.id === avatarSel)?.sheet
+              : undefined,
           lengthSec: Number(lengthSec),
           resolution,
           animate: sceneMode === "motion",
@@ -370,6 +430,67 @@ export function FacelessClient() {
           <Seg label="Narration" value={castMode}
             options={[["single", "Single narrator"], ["duo", "Two characters (dialogue)"]] as const}
             onChange={setCastMode} />
+
+          {castMode === "single" && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Star yourself</p>
+                  <p className="mt-0.5 text-xs text-white/50">
+                    Upload 1–3 photos of yourself — your avatar appears in every scene, drawn in the Look you pick.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={avatarBusy}
+                  onClick={() => avatarFileRef.current?.click()}
+                  className="press shrink-0 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--accent)]/20 disabled:opacity-50"
+                >
+                  {avatarBusy ? "Reading photos…" : avatars.length ? "+ New avatar" : "Create my avatar"}
+                </button>
+              </div>
+              <input
+                ref={avatarFileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                className="hidden"
+                onChange={(e) => createAvatar(e.target.files)}
+              />
+              {avatars.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {avatars.map((a) => {
+                    const active = avatarSel === a.id;
+                    return (
+                      <span key={a.id} className="inline-flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => setAvatarSel(active ? null : a.id)}
+                          aria-pressed={active}
+                          className={`press rounded-l-lg border px-3 py-1.5 text-xs transition-colors ${
+                            active
+                              ? "border-[var(--accent)]/60 bg-[var(--accent)]/15 text-white"
+                              : "border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/5"
+                          }`}
+                        >
+                          {a.name}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`delete ${a.name}`}
+                          onClick={() => deleteAvatar(a.id)}
+                          className="press rounded-r-lg border border-l-0 border-white/10 bg-white/[0.03] px-2 py-1.5 text-xs text-white/40 transition hover:bg-white/10 hover:text-white/80"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              {avatarMsg && <p className="mt-2 text-xs text-white/55">{avatarMsg}</p>}
+            </div>
+          )}
 
           {castMode === "duo" && (
             <div className="grid gap-3 sm:grid-cols-2">
