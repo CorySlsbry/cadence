@@ -151,6 +151,9 @@ export function FacelessClient() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishUrl, setPublishUrl] = useState<string | null>(null);
+  const [publishMsg, setPublishMsg] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
   const [job, setJob] = useState<JobRow | null>(null);
@@ -224,6 +227,27 @@ export function FacelessClient() {
     setAvatars((prev) => prev.filter((a) => a.id !== id));
     if (avatarSel === id) setAvatarSel(null);
     fetch(`/api/avatar?id=${id}`, { method: "DELETE" }).catch(() => {});
+  }
+
+  async function publishToX() {
+    if (!jobId) return;
+    setPublishBusy(true);
+    setPublishMsg(null);
+    try {
+      const r = await fetch("/api/social/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ platform: "x", jobId, caption: title.slice(0, 280) }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "publish failed");
+      setPublishUrl(d.url ?? null);
+      setPublishMsg("Live on X.");
+    } catch (e) {
+      setPublishMsg(e instanceof Error ? e.message : "publish failed");
+    } finally {
+      setPublishBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -794,6 +818,22 @@ export function FacelessClient() {
               <Button className="w-full">Download</Button>
             </a>
             <Button variant="outline" onClick={reset}>Make another</Button>
+          </div>
+          <div className="mx-auto max-w-[320px]">
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={publishBusy}
+              onClick={publishToX}
+            >
+              {publishBusy ? "Posting to X…" : publishUrl ? "Posted ✓ — post again" : "Post to X"}
+            </Button>
+            {publishUrl && (
+              <a href={publishUrl} target="_blank" rel="noreferrer" className="mt-1.5 block text-center text-xs text-[var(--accent)] underline-offset-2 hover:underline">
+                View your post on X
+              </a>
+            )}
+            {publishMsg && <p className="mt-1.5 text-center text-xs text-white/55">{publishMsg}</p>}
           </div>
         </div>
       )}

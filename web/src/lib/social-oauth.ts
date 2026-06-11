@@ -10,8 +10,8 @@
 //   secrets (Secret Manager / env): CADENCE_<PLATFORM>_CLIENT_ID / _CLIENT_SECRET
 import { createHash, createHmac, randomBytes } from "crypto";
 
-export type SocialPlatform = "youtube" | "tiktok" | "instagram";
-export const SOCIAL_PLATFORMS: readonly SocialPlatform[] = ["youtube", "tiktok", "instagram"] as const;
+export type SocialPlatform = "youtube" | "tiktok" | "instagram" | "x";
+export const SOCIAL_PLATFORMS: readonly SocialPlatform[] = ["youtube", "tiktok", "instagram", "x"] as const;
 export function isSocialPlatform(p: string): p is SocialPlatform {
   return (SOCIAL_PLATFORMS as readonly string[]).includes(p);
 }
@@ -37,6 +37,8 @@ type PlatformCfg = {
   exchangeToken: (code: string, verifier: string) => Promise<TokenSet>;
   /** Fetch the connected account's id + handle for display. */
   userInfo: (access: string) => Promise<{ id?: string; username?: string }>;
+  /** Refresh an expired access token (platforms with short-lived tokens, e.g. X's 2h). */
+  refreshToken?: (refresh: string) => Promise<TokenSet>;
 };
 
 function env(name: string): string {
@@ -157,6 +159,47 @@ export const SOCIAL: Record<SocialPlatform, PlatformCfg> = {
       const r = await fetch("https://graph.instagram.com/me?fields=user_id,username&access_token=" + encodeURIComponent(access));
       const j = await r.json().catch(() => ({}));
       return { id: j.user_id, username: j.username };
+    },
+  },
+
+  // --- X (OAuth 2.0 + PKCE, confidential client: Basic auth on the token endpoint; ----------
+  //     2h access tokens, refresh via offline.access)
+  x: {
+    label: "X",
+    configured: () => has("CADENCE_X_CLIENT_ID", "CADENCE_X_CLIENT_SECRET"),
+    pkce: true,
+    authorizeUrl: (state, challenge) =>
+      "https://x.com/i/oauth2/authorize?" +
+      new URLSearchParams({
+        client_id: env("CADENCE_X_CLIENT_ID"),
+        redirect_uri: redirectUri("x"),
+        response_type: "code",
+        scope: "tweet.read tweet.write users.read media.write offline.access",
+        state,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      }).toString(),
+    exchangeToken: async (code, verifier) => {
+      const basic = Buffer.from(`${env("CADENCE_X_CLIENT_ID")}:${env("CADENCE_X_CLIENT_SECRET")}`).toString("base64");
+      const j = await postForm("https://api.x.com/2/oauth2/token", {
+        code, grant_type: "authorization_code", redirect_uri: redirectUri("x"),
+        code_verifier: verifier, client_id: env("CADENCE_X_CLIENT_ID"),
+      }, { authorization: `Basic ${basic}` });
+      return { access: j.access_token as string, refresh: (j.refresh_token as string) ?? null,
+               expiresIn: (j.expires_in as number) ?? null, scopes: (j.scope as string) ?? null };
+    },
+    refreshToken: async (refresh) => {
+      const basic = Buffer.from(`${env("CADENCE_X_CLIENT_ID")}:${env("CADENCE_X_CLIENT_SECRET")}`).toString("base64");
+      const j = await postForm("https://api.x.com/2/oauth2/token", {
+        refresh_token: refresh, grant_type: "refresh_token", client_id: env("CADENCE_X_CLIENT_ID"),
+      }, { authorization: `Basic ${basic}` });
+      return { access: j.access_token as string, refresh: (j.refresh_token as string) ?? refresh,
+               expiresIn: (j.expires_in as number) ?? null, scopes: (j.scope as string) ?? null };
+    },
+    userInfo: async (access) => {
+      const r = await fetch("https://api.x.com/2/users/me", { headers: { authorization: `Bearer ${access}` } });
+      const j = await r.json().catch(() => ({}));
+      return { id: j?.data?.id, username: j?.data?.username };
     },
   },
 };
