@@ -70,7 +70,9 @@ class SelfHostGenerator:
 
 def animate_image(base_url: str, token: str, image_bytes: bytes, *, prompt: str,
                   seconds: float = 3.0, fps: int = 24, width: int = 704,
-                  height: int = 1280, timeout: float = 600.0) -> bytes:
+                  height: int = 1280, timeout: float = 900.0) -> bytes:
+    # 900s: a COLD first call (Wan hot-swap + load from FUSE + inference) measured
+    # 787s on the L4; 600s made the client give up on work the GPU then finished.
     """Image→video on cadence-gen (FastWan distill). Returns MP4 bytes; raises on failure
     (callers decide whether to degrade to the still)."""
     frames = max(17, min(int(round(seconds * fps)) + 1, 121))

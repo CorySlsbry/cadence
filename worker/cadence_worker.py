@@ -525,9 +525,19 @@ class Worker:
 
             anim_ledger = self._ledger(float(os.environ.get("CADENCE_AI_BUDGET_USD", "10")))
             motion = SCENE_STYLES.get(scene_style, "cinematic photoreal")
+            # Hard wall-clock budget: 6 scenes x 900s timeouts could breach the
+            # 3600s Cloud Run job ceiling and kill the whole render; past the
+            # budget the remaining scenes stay stills.
+            anim_budget = float(os.environ.get("CADENCE_ANIMATE_BUDGET_S", "2400"))
+            anim_start = time.monotonic()
             items = []
             for k, ins in enumerate(inserts):
                 clip_path = None
+                if time.monotonic() - anim_start > anim_budget:
+                    print(f"[worker] faceless: animate budget ({anim_budget:.0f}s) hit "
+                          f"at scene {k}; rest stay stills", flush=True)
+                    items.append((ins, None))
+                    continue
                 try:
                     anim_ledger.charge(0.05)
                     anim_ledger.charge(0.05)  # 2 tokens per animated scene
