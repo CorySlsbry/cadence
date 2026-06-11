@@ -56,6 +56,27 @@ def _env(name: str, default: str | None = None) -> str:
 
 AUDIO_FIT_BPS = 160_000  # AAC track reserved in the fit budget
 
+# Faceless scene styles: the override REPLACES the photoreal prompt framing entirely
+# (see build_ai_prompt_scene). Keys are what the web sends in faceless.scene_style.
+SCENE_STYLES = {
+    "claymation": "handcrafted claymation stop-motion scene, plasticine characters with subtle "
+                  "fingerprint texture, miniature handmade set, warm studio lighting",
+    "cartoon3d": "premium 3D animated cartoon scene, expressive stylized characters, soft global "
+                 "illumination, rich subsurface detail, feature-animation quality render",
+    "anime": "cinematic anime scene, detailed cel shading, dramatic rim lighting, expressive "
+             "characters, premium animation-studio key visual",
+    "comic": "bold comic book illustration, dynamic ink linework, halftone shading, vivid saturated "
+             "colors, dramatic graphic-novel panel composition",
+    "watercolor": "hand-painted watercolor illustration, soft pigment washes, textured cold-press "
+                  "paper grain, delicate ink linework, gallery-quality",
+    "cyberpunk": "neon cyberpunk scene, rain-slick reflective streets, holographic signage glow, "
+                 "dramatic magenta-and-cyan lighting, cinematic sci-fi atmosphere",
+    "papercraft": "layered paper-cut craft scene, dimensional cardstock collage, crisp die-cut "
+                  "edges, soft shadows between paper layers, handmade premium feel",
+    "character": "cinematic character-driven scene starring one consistent stylized hero character "
+                 "who appears in every shot, expressive and instantly recognizable",
+}
+
 
 def fit_video_bitrate(limit_bytes: int, duration_sec: float, *, audio_bps: int = AUDIO_FIT_BPS) -> int:
     """Video bitrate that lands a re-encode ~93% under the upload cap.
@@ -276,7 +297,12 @@ class Worker:
             fc = (job.get("customization") or {}).get("faceless")
             if fc and not job.get("plan"):
                 out_path = os.path.join(tmp, "final.mp4")
-                result, edl_f = self._render_faceless(recording, ctrl, tmp, out_path, keys, music_path)
+                scene_style = str(fc.get("scene_style") or "") if isinstance(fc, dict) else ""
+                scene_direction = str(fc.get("scene_direction") or "")[:400] if isinstance(fc, dict) else ""
+                result, edl_f = self._render_faceless(
+                    recording, ctrl, tmp, out_path, keys, music_path,
+                    scene_style=scene_style, scene_direction=scene_direction,
+                )
                 output_key = f"{user_id}/{job_id}.mp4"
                 self._upload(OUTPUTS, output_key, out_path)
                 credit = bool((job.get("customization") or {}).get("credit_cadence"))
@@ -420,7 +446,8 @@ class Worker:
         return mux_voiceover(video_path, vo_path, out, ff=self.ff)
 
     def _render_faceless(self, audio_path: str, ctrl, tmp: str, out_path: str, keys=None,
-                         music_path: str | None = None):
+                         music_path: str | None = None, scene_style: str = "",
+                         scene_direction: str = ""):
         """Faceless render: narration audio -> ASR -> per-moment AI scenes (the existing
         contextual b-roll engine) stitched into a full-duration visual track + karaoke
         captions + optional hook card + ducked music. Returns (RenderResult, edl) — the
@@ -465,11 +492,17 @@ class Worker:
         os.makedirs(out_dir, exist_ok=True)
         if self._current_job_id:
             self._update(self._current_job_id, progress=0.5)
+        style_override = SCENE_STYLES.get(scene_style)
         inserts = build_ai_broll(
             words_out, dur, self._image_generator(ctrl.broll_quality, gkey, gbyok),
             out_dir=out_dir, windows=windows, max_images=n,
-            distiller=self._distiller(gkey), cine=ctrl.cinematography,
-            factual_assets=self._factual_assets(),
+            distiller=self._distiller(gkey),
+            # A named art style replaces the photographic look — cinematography clauses
+            # (lenses, f-stops) would fight claymation/anime prompts.
+            cine=None if style_override else ctrl.cinematography,
+            factual_assets=None if style_override else self._factual_assets(),
+            style_override=style_override,
+            direction=scene_direction,
         )
         if not inserts:
             raise RuntimeError("faceless: scene generation produced no images")

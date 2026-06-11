@@ -111,8 +111,20 @@ def build_ai_prompt(topic: str, caption: str) -> str:
     )
 
 
-def build_ai_prompt_scene(scene: str, caption: str, cine=None) -> str:
-    """The loop-tuned template: a distilled SCENE + cinematography look + a clean CAPTION."""
+def build_ai_prompt_scene(scene: str, caption: str, cine=None, style_override: str | None = None) -> str:
+    """The loop-tuned template: a distilled SCENE + cinematography look + a clean CAPTION.
+
+    ``style_override`` swaps the photoreal framing for a named art style (claymation,
+    3D cartoon, anime, …) — the override REPLACES the photographic language entirely,
+    because "hyperrealistic photograph" and "claymation" fight each other in the model.
+    """
+    if style_override:
+        return (
+            f"A {style_override}, vertical 9:16 composition: {scene}. "
+            "Ultra detailed, premium quality, masterfully crafted, rich texture and depth. "
+            f"The phrase \"{caption}\" appears cleanly integrated into the scene in crisp readable "
+            "typography. No watermark, no garbled text."
+        )
     look = (
         ", ".join(cine.to_prompt_clauses())
         if cine is not None
@@ -174,6 +186,8 @@ def build_ai_broll(
     distiller=None,
     cine=None,
     factual_assets: list | None = None,
+    style_override: str | None = None,
+    direction: str = "",
 ) -> list[BrollInsert]:
     """Generate a contextual, photoreal b-roll image for each cutaway window.
 
@@ -216,11 +230,13 @@ def build_ai_broll(
                           flush=True)
         if distiller is not None:
             scene, caption = distiller.distill(window_text)
-            prompt = build_ai_prompt_scene(scene, caption, cine=cine)
+            prompt = build_ai_prompt_scene(scene, caption, cine=cine, style_override=style_override)
         else:
             topic = topic_for_window(words_out, start, end) or "a clean modern workspace"
             caption = caption_for_topic(topic)
-            prompt = build_ai_prompt_scene(topic, caption, cine=cine)
+            prompt = build_ai_prompt_scene(topic, caption, cine=cine, style_override=style_override)
+        if direction:
+            prompt = f"{prompt} Creator's scene direction (follow it): {direction}"
         try:
             res = generator.generate(prompt, aspect="9x16", style_refs=style_refs)
         except BudgetExceeded:

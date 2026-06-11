@@ -15,12 +15,21 @@ const TTS_MODEL = "gemini-3.1-flash-tts-preview";
 // Curated Gemini prebuilt voices — names are the API values.
 const VOICES = new Set(["Charon", "Kore", "Puck", "Aoede", "Fenrir", "Leda"]);
 
+const SCENE_STYLES = new Set([
+  "cinematic", "film", "clean", "claymation", "cartoon3d", "anime",
+  "comic", "watercolor", "cyberpunk", "papercraft", "character",
+]);
+
 const Body = z.object({
   topic: z.string().max(500).optional(),
   script: z.string().max(8000).optional(),
   voice: z.string().default("Charon"),
+  voiceProvider: z.enum(["gemini", "elevenlabs"]).default("gemini"),
+  voiceId: z.string().max(64).optional(), // ElevenLabs voice id when provider=elevenlabs
   lengthSec: z.number().min(20).max(180).default(60),
   style: z.enum(["cinematic", "cinematic_film", "clean_ugc"]).default("cinematic"),
+  sceneStyle: z.string().max(24).default("cinematic"),
+  sceneDirection: z.string().max(400).default(""),
   resolution: z.enum(["1080p", "4k"]).default("1080p"),
   projectId: z.string().uuid().nullable().optional(),
 });
@@ -142,10 +151,30 @@ Return STRICT JSON: {"title": "scroll-stopping title (max 70 chars)", "body": "t
     if (!script.trim()) return NextResponse.json({ error: "empty script generated" }, { status: 502 });
   }
 
-  // 2) Narration audio.
-  let wav: Buffer;
+  // 2) Narration audio — Gemini studio voices (included) or the user's ElevenLabs
+  //    voice (BYOK; includes their in-app clones).
+  let audio: Buffer;
+  let ext = "wav";
+  let mime = "audio/wav";
+  let voiceLabel = body.voice;
   try {
-    wav = await synthesizeSpeech(script, body.voice);
+    if (body.voiceProvider === "elevenlabs") {
+      if (!body.voiceId) return NextResponse.json({ error: "voiceId required" }, { status: 422 });
+      const { resolveElevenLabsKey, ttsMp3 } = await import("@/lib/elevenlabs");
+      const key = await resolveElevenLabsKey(user.id);
+      if (!key) {
+        return NextResponse.json(
+          { error: "Connect your ElevenLabs key in Connections to use your own voice." },
+          { status: 400 },
+        );
+      }
+      audio = await ttsMp3(key, body.voiceId, script);
+      ext = "mp3";
+      mime = "audio/mpeg";
+      voiceLabel = `el:${body.voiceId}`;
+    } else {
+      audio = await synthesizeSpeech(script, body.voice);
+    }
   } catch (e) {
     return NextResponse.json(
       { error: `voice synthesis failed: ${e instanceof Error ? e.message : "unknown"}` },
@@ -154,10 +183,10 @@ Return STRICT JSON: {"title": "scroll-stopping title (max 70 chars)", "body": "t
   }
 
   // 3) Upload the narration as the job's "recording" (user-scoped path under uploads).
-  const recordingPath = `${user.id}/faceless-${Date.now()}.wav`;
+  const recordingPath = `${user.id}/faceless-${Date.now()}.${ext}`;
   const { error: upErr } = await supabase.storage
     .from("uploads")
-    .upload(recordingPath, wav, { upsert: true, contentType: "audio/wav" });
+    .upload(recordingPath, audio, { upsert: true, contentType: mime });
   if (upErr) return NextResponse.json({ error: `audio upload failed: ${upErr.message}` }, { status: 500 });
 
   // 4) Queue the render. The worker's faceless branch takes it from here.
@@ -168,7 +197,12 @@ Return STRICT JSON: {"title": "scroll-stopping title (max 70 chars)", "body": "t
       project_id: body.projectId ?? null,
       recording_path: recordingPath,
       customization: {
-        faceless: { voice: body.voice, topic: title },
+        faceless: {
+          voice: voiceLabel,
+          topic: title,
+          scene_style: SCENE_STYLES.has(body.sceneStyle) ? body.sceneStyle : "cinematic",
+          scene_direction: body.sceneDirection.trim(),
+        },
         preset: body.style,
         resolution: body.resolution,
         captions: true,

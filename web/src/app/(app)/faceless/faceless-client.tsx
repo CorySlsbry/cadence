@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Card } from "@/components/ui";
 
@@ -17,11 +18,29 @@ const VOICES = [
   { id: "Leda", name: "Leda", vibe: "Calm & soothing" },
 ] as const;
 
-const STYLES = [
-  ["cinematic", "Cinematic"],
-  ["cinematic_film", "Film"],
-  ["clean_ugc", "Clean"],
+// Scene looks — the first three keep the photoreal pipeline; the rest swap in a
+// full art-style override (claymation, cartoon, anime, …) for every AI scene.
+const LOOKS = [
+  ["cinematic", "Cinematic", "Photoreal, premium"],
+  ["film", "Film", "35mm grade"],
+  ["clean", "Clean", "Bright UGC"],
+  ["claymation", "Claymation", "Stop-motion clay"],
+  ["cartoon3d", "3D Cartoon", "Feature-animation"],
+  ["anime", "Anime", "Cel-shaded drama"],
+  ["comic", "Comic Book", "Inked panels"],
+  ["watercolor", "Watercolor", "Hand-painted"],
+  ["cyberpunk", "Cyberpunk", "Neon noir"],
+  ["papercraft", "Paper Craft", "Layered cutouts"],
+  ["character", "Character", "One hero, every scene"],
 ] as const;
+
+type LookKey = (typeof LOOKS)[number][0];
+
+type ElVoice = { voice_id: string; name: string; category: string; preview_url: string | null };
+
+type VoiceSel =
+  | { provider: "gemini"; id: string }
+  | { provider: "elevenlabs"; id: string; name: string };
 
 type JobRow = {
   status: "queued" | "processing" | "done" | "error";
@@ -57,6 +76,25 @@ function Seg<T extends string>({
   );
 }
 
+/** Tiny play/stop control for voice previews — one shared <audio> across the page. */
+function PlayDot({ playing, onClick, disabled }: { playing: boolean; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      disabled={disabled}
+      aria-label={playing ? "Stop preview" : "Play preview"}
+      className={`press flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[10px] transition-colors ${
+        playing
+          ? "border-[var(--accent)] bg-[var(--accent)] text-black"
+          : "border-white/20 bg-white/5 text-white/70 hover:border-[var(--accent)]/60 hover:text-white"
+      } disabled:cursor-not-allowed disabled:opacity-40`}
+    >
+      {playing ? "■" : "▶"}
+    </button>
+  );
+}
+
 function stageFor(p: number, status: string): string {
   if (status === "queued") return "Queued — a render slot opens in under a minute";
   if (p < 0.45) return "Transcribing the narration";
@@ -71,10 +109,28 @@ export function FacelessClient() {
   const [mode, setMode] = useState<"topic" | "script">("topic");
   const [topic, setTopic] = useState("");
   const [script, setScript] = useState("");
-  const [voice, setVoice] = useState<string>("Charon");
-  const [style, setStyle] = useState<(typeof STYLES)[number][0]>("cinematic");
+  const [voiceSel, setVoiceSel] = useState<VoiceSel>({ provider: "gemini", id: "Charon" });
+  const [look, setLook] = useState<LookKey>("cinematic");
+  const [direction, setDirection] = useState("");
   const [lengthSec, setLengthSec] = useState<"30" | "60" | "90">("60");
   const [resolution, setResolution] = useState<"1080p" | "4k">("1080p");
+
+  // Voice previews — one shared audio element; whichever key is playing owns it.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playingKey, setPlayingKey] = useState<string | null>(null);
+
+  // ElevenLabs (BYOK) voices + in-app cloning.
+  const [elConnected, setElConnected] = useState<boolean | null>(null);
+  const [elVoices, setElVoices] = useState<ElVoice[]>([]);
+  const [cloneName, setCloneName] = useState("");
+  const [cloneBusy, setCloneBusy] = useState(false);
+  const [cloneMsg, setCloneMsg] = useState<string | null>(null);
+  const [recState, setRecState] = useState<"idle" | "recording">("idle");
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [sample, setSample] = useState<File | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const recChunks = useRef<Blob[]>([]);
+  const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +142,22 @@ export function FacelessClient() {
 
   const scenes = Math.max(3, Math.min(Math.round(Number(lengthSec) / 7), 16));
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (recTimer.current) clearInterval(recTimer.current);
+    audioRef.current?.pause();
+    recRef.current?.stream.getTracks().forEach((t) => t.stop());
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/faceless/voices")
+      .then((r) => r.json())
+      .then((d: { connected?: boolean; voices?: ElVoice[] }) => {
+        setElConnected(Boolean(d.connected));
+        setElVoices(d.voices ?? []);
+      })
+      .catch(() => setElConnected(false));
+  }, []);
 
   useEffect(() => {
     if (!jobId) return;
@@ -110,6 +181,80 @@ export function FacelessClient() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [jobId, supabase]);
 
+  function togglePreview(key: string, src: string | null) {
+    if (!src) return;
+    if (playingKey === key) {
+      audioRef.current?.pause();
+      setPlayingKey(null);
+      return;
+    }
+    if (!audioRef.current) audioRef.current = new Audio();
+    const a = audioRef.current;
+    a.pause();
+    a.src = src;
+    a.onended = () => setPlayingKey(null);
+    a.play().then(() => setPlayingKey(key)).catch(() => setPlayingKey(null));
+  }
+
+  async function startRecording() {
+    setCloneMsg(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      recChunks.current = [];
+      const rec = new MediaRecorder(stream);
+      rec.ondataavailable = (e) => { if (e.data.size > 0) recChunks.current.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(recChunks.current, { type: rec.mimeType || "audio/webm" });
+        setSample(new File([blob], "sample.webm", { type: blob.type }));
+      };
+      recRef.current = rec;
+      rec.start();
+      setRecSeconds(0);
+      setRecState("recording");
+      recTimer.current = setInterval(() => {
+        setRecSeconds((s) => {
+          if (s + 1 >= 60) stopRecording(); // 60s is plenty for an instant clone
+          return s + 1;
+        });
+      }, 1000);
+    } catch {
+      setCloneMsg("Microphone unavailable — upload a sample instead.");
+    }
+  }
+
+  function stopRecording() {
+    if (recTimer.current) clearInterval(recTimer.current);
+    recTimer.current = null;
+    recRef.current?.stop();
+    setRecState("idle");
+  }
+
+  async function submitClone() {
+    if (!sample) return;
+    setCloneBusy(true);
+    setCloneMsg(null);
+    try {
+      const form = new FormData();
+      form.append("name", cloneName.trim() || "My voice");
+      form.append("files", sample);
+      const r = await fetch("/api/faceless/clone", { method: "POST", body: form });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "clone failed");
+      setCloneMsg(`"${d.name}" cloned — selected below.`);
+      setSample(null);
+      const vr = await fetch("/api/faceless/voices").then((x) => x.json());
+      setElVoices(vr.voices ?? []);
+      setVoiceSel({ provider: "elevenlabs", id: d.voice_id, name: d.name });
+    } catch (e) {
+      setCloneMsg(e instanceof Error ? e.message : "clone failed");
+    } finally {
+      setCloneBusy(false);
+    }
+  }
+
   async function generate() {
     setError(null);
     setBusy(true);
@@ -120,8 +265,12 @@ export function FacelessClient() {
         body: JSON.stringify({
           topic: mode === "topic" ? topic.trim() : undefined,
           script: mode === "script" ? script.trim() : undefined,
-          voice,
-          style,
+          voice: voiceSel.provider === "gemini" ? voiceSel.id : "Charon",
+          voiceProvider: voiceSel.provider,
+          voiceId: voiceSel.provider === "elevenlabs" ? voiceSel.id : undefined,
+          style: look === "film" ? "cinematic_film" : look === "clean" ? "clean_ugc" : "cinematic",
+          sceneStyle: look,
+          sceneDirection: direction.trim(),
           lengthSec: Number(lengthSec),
           resolution,
         }),
@@ -144,6 +293,8 @@ export function FacelessClient() {
   }
 
   const inputOk = mode === "topic" ? topic.trim().length > 2 : script.trim().length > 20;
+  const clonedVoices = elVoices.filter((v) => v.category !== "premade");
+  const premadeVoices = elVoices.filter((v) => v.category === "premade");
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
@@ -153,8 +304,8 @@ export function FacelessClient() {
       </h1>
       <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/60">
         Give it a topic. It writes the narration in your blueprint voice, speaks it with a
-        studio voice, paints every beat as an AI scene, and captions it karaoke-style —
-        a finished 9:16 short with zero filming.
+        studio voice — or <span className="text-white/80">your own cloned voice</span> — paints
+        every beat as an AI scene in the style you pick, and captions it karaoke-style.
       </p>
 
       {!jobId && (
@@ -182,29 +333,164 @@ export function FacelessClient() {
           )}
 
           <div>
-            <p className="mb-1.5 text-xs font-medium text-white/65">Voice</p>
+            <p className="mb-1.5 text-xs font-medium text-white/65">Studio voices <span className="text-white/35">— tap ▶ to hear</span></p>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-              {VOICES.map((v) => (
+              {VOICES.map((v) => {
+                const active = voiceSel.provider === "gemini" && voiceSel.id === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => setVoiceSel({ provider: "gemini", id: v.id })}
+                    aria-pressed={active}
+                    className={`press flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                      active
+                        ? "border-[var(--accent)]/60 bg-[var(--accent)]/15"
+                        : "border-white/10 bg-white/[0.03] hover:bg-white/5"
+                    }`}
+                  >
+                    <span>
+                      <span className="block text-sm font-semibold">{v.name}</span>
+                      <span className="block text-xs text-white/55">{v.vibe}</span>
+                    </span>
+                    <PlayDot
+                      playing={playingKey === `g:${v.id}`}
+                      onClick={() => togglePreview(`g:${v.id}`, `/voices/${v.id.toLowerCase()}.wav`)}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-white/65">
+              Your voice <span className="text-white/35">— ElevenLabs</span>
+            </p>
+            {elConnected === false && (
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-white/55">
+                Narrate in <span className="text-white/80">your own voice</span>: connect your ElevenLabs key in{" "}
+                <Link href="/connections" className="text-[var(--accent)] hover:underline">Connections</Link>,
+                then clone yourself right here. Voice generation runs on your ElevenLabs plan.
+              </div>
+            )}
+            {elConnected && (
+              <div className="space-y-3">
+                {elVoices.length > 0 && (
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                    {[...clonedVoices, ...premadeVoices].map((v) => {
+                      const active = voiceSel.provider === "elevenlabs" && voiceSel.id === v.voice_id;
+                      return (
+                        <button
+                          key={v.voice_id}
+                          type="button"
+                          onClick={() => setVoiceSel({ provider: "elevenlabs", id: v.voice_id, name: v.name })}
+                          aria-pressed={active}
+                          className={`press flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                            active
+                              ? "border-[var(--accent)]/60 bg-[var(--accent)]/15"
+                              : "border-white/10 bg-white/[0.03] hover:bg-white/5"
+                          }`}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold">{v.name}</span>
+                            <span className={`block text-xs ${v.category !== "premade" ? "text-[var(--accent)]" : "text-white/55"}`}>
+                              {v.category !== "premade" ? "✦ your clone" : "ElevenLabs"}
+                            </span>
+                          </span>
+                          <PlayDot
+                            playing={playingKey === `e:${v.voice_id}`}
+                            onClick={() => togglePreview(`e:${v.voice_id}`, v.preview_url)}
+                            disabled={!v.preview_url}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4">
+                  <p className="text-sm font-semibold">Clone your voice</p>
+                  <p className="mt-1 text-xs text-white/50">
+                    Read anything naturally for 30–60 seconds — or upload a clean sample. The clone
+                    lands in your ElevenLabs library and is instantly usable here.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <input
+                      value={cloneName}
+                      onChange={(e) => setCloneName(e.target.value)}
+                      placeholder="Voice name (e.g. Cory)"
+                      className="h-9 w-44 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-white outline-none transition focus:border-[var(--accent)]/60"
+                    />
+                    {recState === "idle" ? (
+                      <Button variant="outline" onClick={startRecording} type="button" className="h-9 px-3 text-xs">
+                        ● Record
+                      </Button>
+                    ) : (
+                      <Button variant="outline" onClick={stopRecording} type="button" className="h-9 animate-pulse px-3 text-xs">
+                        ■ Stop ({recSeconds}s)
+                      </Button>
+                    )}
+                    <label className="press inline-flex h-9 cursor-pointer items-center rounded-lg border border-white/15 px-3 text-xs font-medium text-white/70 transition-colors hover:bg-white/5">
+                      Upload sample
+                      <input
+                        type="file"
+                        accept="audio/*,video/webm"
+                        className="hidden"
+                        onChange={(e) => { setSample(e.target.files?.[0] ?? null); setCloneMsg(null); }}
+                      />
+                    </label>
+                    {sample && (
+                      <span className="max-w-[12rem] truncate text-xs text-white/55">
+                        {sample.name} · {(sample.size / 1048576).toFixed(1)}MB
+                      </span>
+                    )}
+                    <Button onClick={submitClone} disabled={!sample || cloneBusy} type="button" className="h-9 px-4 text-xs">
+                      {cloneBusy ? "Cloning…" : "Create clone"}
+                    </Button>
+                  </div>
+                  {cloneMsg && <p className="mt-2 text-xs text-white/60">{cloneMsg}</p>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-white/65">Look</p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {LOOKS.map(([key, label, hint]) => (
                 <button
-                  key={v.id}
+                  key={key}
                   type="button"
-                  onClick={() => setVoice(v.id)}
-                  aria-pressed={voice === v.id}
+                  onClick={() => setLook(key)}
+                  aria-pressed={look === key}
                   className={`press rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                    voice === v.id
+                    look === key
                       ? "border-[var(--accent)]/60 bg-[var(--accent)]/15"
                       : "border-white/10 bg-white/[0.03] hover:bg-white/5"
                   }`}
                 >
-                  <span className="block text-sm font-semibold">{v.name}</span>
-                  <span className="block text-xs text-white/55">{v.vibe}</span>
+                  <span className="block text-sm font-semibold">{label}</span>
+                  <span className="block text-xs text-white/50">{hint}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Seg label="Look" value={style} options={STYLES} onChange={setStyle} />
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-white/65">
+              Direct the scenes <span className="text-white/35">— optional</span>
+            </p>
+            <textarea
+              value={direction}
+              onChange={(e) => setDirection(e.target.value.slice(0, 400))}
+              rows={2}
+              placeholder='e.g. "A tiny clay robot stars in every scene" · "Make me a viking exploring each idea" · "Warm sunset palette, lots of close-ups"'
+              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none transition focus:border-[var(--accent)]/60 focus:ring-2 focus:ring-[var(--accent)]/25"
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <Seg label="Length" value={lengthSec}
               options={[["30", "30s"], ["60", "60s"], ["90", "90s"]] as const}
               onChange={setLengthSec} />
@@ -220,7 +506,10 @@ export function FacelessClient() {
           )}
 
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-white/45">≈ {scenes} AI scenes · {scenes} tokens</p>
+            <p className="text-xs text-white/45">
+              ≈ {scenes} AI scenes · {scenes} tokens
+              {voiceSel.provider === "elevenlabs" && " · voiced as " + ("name" in voiceSel ? voiceSel.name : "your clone")}
+            </p>
             <Button onClick={generate} disabled={busy || !inputOk} className="min-w-44">
               {busy ? "Writing & voicing…" : "Generate video"}
             </Button>
@@ -241,7 +530,7 @@ export function FacelessClient() {
             <p className="mt-2 text-sm text-white/60">{stageFor(job.progress, job.status)}</p>
           </div>
           <p className="text-xs text-white/40">
-            You can leave this page — the video keeps rendering and lands in your account.
+            You can leave this page — the video keeps rendering and lands in your Library.
           </p>
         </Card>
       )}
