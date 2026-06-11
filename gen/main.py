@@ -105,6 +105,13 @@ def _get_kokoro():
 def _warmup() -> None:
     def run():
         try:
+            import torch
+
+            avail = torch.cuda.is_available()
+            print(f"[gen] cuda available={avail} torch={torch.__version__}", flush=True)
+            if avail:
+                torch.cuda.set_device(0)  # init the primary context in THIS thread
+                print(f"[gen] device={torch.cuda.get_device_name(0)}", flush=True)
             with _gpu_lock:
                 pipe = _get_pipe("flux")
                 pipe("warmup frame, a simple gradient", num_inference_steps=1,
