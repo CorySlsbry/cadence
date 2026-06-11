@@ -31,8 +31,9 @@ class SelfHostGenerator:
 
     def __init__(self, base_url: str, token: str, *, ledger: CostLedger | None = None,
                  fallback=None, timeout: float = 240.0) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.token = token
+        # Secret-mounted env values can carry CRLF; urllib rejects \r\n in header values.
+        self.base_url = base_url.strip().rstrip("/")
+        self.token = token.strip()
         self.ledger = ledger
         self.fallback = fallback
         self.timeout = timeout
@@ -79,8 +80,8 @@ def animate_image(base_url: str, token: str, image_bytes: bytes, *, prompt: str,
         "width": width, "height": height, "steps": 3,
     }).encode()
     req = urllib.request.Request(
-        f"{base_url.rstrip('/')}/animate", data=body, method="POST",
-        headers={"content-type": "application/json", "x-gen-token": token},
+        f"{base_url.strip().rstrip('/')}/animate", data=body, method="POST",
+        headers={"content-type": "application/json", "x-gen-token": token.strip()},
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read()

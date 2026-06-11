@@ -31,7 +31,8 @@ class CachingGenerator:
                  style_refs: list[str] | None = None, seed: int | None = None) -> GenResult:
         try:
             hit = self.lookup(prompt, aspect)
-        except Exception:  # noqa: BLE001 - library down must never block a render
+        except Exception as exc:  # noqa: BLE001 - library down must never block a render
+            print(f"[engine] library lookup failed ({exc!r}); generating", flush=True)
             hit = None
         if hit:
             return GenResult(image_bytes=hit, prompt=prompt, cost_usd=0.0,
@@ -39,6 +40,6 @@ class CachingGenerator:
         res = self.inner.generate(prompt, aspect=aspect, style_refs=style_refs, seed=seed)
         try:
             self.save(prompt, aspect, res.image_bytes, res.provider)
-        except Exception:  # noqa: BLE001 - donation is best-effort
-            pass
+        except Exception as exc:  # noqa: BLE001 - donation is best-effort
+            print(f"[engine] library save failed ({exc!r})", flush=True)
         return res

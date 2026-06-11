@@ -1,6 +1,6 @@
 """Scene asset library — semantic reuse of generated b-roll across renders.
 
-Before generating a scene image we embed its prompt (Gemini text-embedding-004,
+Before generating a scene image we embed its prompt (gemini-embedding-001 at
 768-dim, ~free) and ask `match_scene_assets` for a same-style, same-kind asset at
 >=0.86 cosine similarity owned by this user (or platform-global rows). A hit costs
 the user 0 tokens and us $0; a miss generates normally and donates the result back
@@ -15,7 +15,7 @@ import uuid
 
 _EMBED_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/text-embedding-004:embedContent?key={key}"
+    "models/gemini-embedding-001:embedContent?key={key}"
 )
 _BUCKET = "assets"
 
@@ -47,8 +47,9 @@ class AssetLibrary:
         if text in self._emb_cache:
             return self._emb_cache[text]
         body = json.dumps({
-            "model": "models/text-embedding-004",
+            "model": "models/gemini-embedding-001",
             "content": {"parts": [{"text": text[:6000]}]},
+            "outputDimensionality": 768,  # matches scene_assets vector(768)
         }).encode()
         req = urllib.request.Request(
             _EMBED_URL.format(key=self.gemini_key), data=body, method="POST",
