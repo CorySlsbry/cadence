@@ -12,7 +12,7 @@ import { SOCIAL, type SocialPlatform } from "@/lib/social-oauth";
 export const maxDuration = 300; // video upload + processing poll
 
 const Body = z.object({
-  platform: z.literal("x"), // expand as platforms gain publish support
+  platform: z.enum(["x", "youtube"]),
   jobId: z.string().uuid(),
   caption: z.string().max(280).default(""),
 });
@@ -72,6 +72,43 @@ async function xUploadVideo(access: string, video: Buffer): Promise<string> {
   return mediaId;
 }
 
+async function youtubeUpload(access: string, video: Buffer, title: string): Promise<string> {
+  // Resumable upload; "private" until the Google app clears OAuth verification —
+  // creators can flip visibility in YouTube Studio meanwhile.
+  const initRes = await fetch(
+    "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${access}`,
+        "content-type": "application/json",
+        "x-upload-content-type": "video/mp4",
+        "x-upload-content-length": String(video.length),
+      },
+      body: JSON.stringify({
+        snippet: { title: title.slice(0, 95) || "CloutHook short", categoryId: "22" },
+        status: { privacyStatus: "private", selfDeclaredMadeForKids: false },
+      }),
+    },
+  );
+  if (!initRes.ok) {
+    const t = await initRes.text().catch(() => "");
+    throw new Error(`YouTube upload init failed (${initRes.status}): ${t.slice(0, 200)}`);
+  }
+  const session = initRes.headers.get("location");
+  if (!session) throw new Error("YouTube did not return an upload session");
+  const upRes = await fetch(session, {
+    method: "PUT",
+    headers: { "content-type": "video/mp4", "content-length": String(video.length) },
+    body: Uint8Array.from(video),
+  });
+  const up = await upRes.json().catch(() => ({}));
+  if (!upRes.ok || !up.id) {
+    throw new Error(`YouTube upload failed (${upRes.status}): ${JSON.stringify(up).slice(0, 200)}`);
+  }
+  return up.id as string;
+}
+
 export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -103,7 +140,10 @@ export async function POST(req: Request) {
     .eq("platform", platform)
     .single();
   if (!conn) {
-    return NextResponse.json({ error: "connect your X account first (Connections page)" }, { status: 409 });
+    return NextResponse.json(
+      { error: `connect your ${SOCIAL[platform].label} account first (Connections page)` },
+      { status: 409 },
+    );
   }
 
   let access = decryptSecret(conn.access_token_enc);
@@ -119,7 +159,10 @@ export async function POST(req: Request) {
         expires_at: fresh.expiresIn ? new Date(Date.now() + fresh.expiresIn * 1000).toISOString() : null,
       }).eq("id", conn.id);
     } catch {
-      return NextResponse.json({ error: "X session expired — reconnect on the Connections page" }, { status: 409 });
+      return NextResponse.json(
+        { error: `${SOCIAL[platform].label} session expired — reconnect on the Connections page` },
+        { status: 409 },
+      );
     }
   }
 
@@ -130,11 +173,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "video exceeds X's 512MB limit" }, { status: 413 });
   }
 
+  const caption =
+    body.caption.trim() ||
+    String((job.customization as { faceless?: { topic?: string } })?.faceless?.topic ?? "").slice(0, 270);
+
   try {
+    if (platform === "youtube") {
+      const videoId = await youtubeUpload(access, video, caption);
+      return NextResponse.json({
+        ok: true,
+        url: `https://youtube.com/watch?v=${videoId}`,
+        note: "uploaded as private — set visibility in YouTube Studio",
+      });
+    }
     const mediaId = await xUploadVideo(access, video);
-    const caption =
-      body.caption.trim() ||
-      String((job.customization as { faceless?: { topic?: string } })?.faceless?.topic ?? "").slice(0, 270);
     const postRes = await fetch("https://api.x.com/2/tweets", {
       method: "POST",
       headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
