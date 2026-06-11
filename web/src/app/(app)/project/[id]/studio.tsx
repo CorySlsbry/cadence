@@ -134,7 +134,7 @@ export function Studio({
   const [brollCaption, setBrollCaption] = useState(false);
   const [brollQuality, setBrollQuality] = useState<"fast" | "standard" | "ultra">("standard");
   const [bgDynamic, setBgDynamic] = useState(false); // Replace-BG: per-moment AI b-roll background vs one static image
-  const [pacing, setPacing] = useState<"natural" | "between" | "match">("between");
+  const [pacing, setPacing] = useState<"natural" | "between" | "match" | "none">("between");
   const [multiclip, setMulticlip] = useState(false);
   const [multiclipCount, setMulticlipCount] = useState(4);
   const [autoReframe, setAutoReframe] = useState(false);
@@ -181,7 +181,7 @@ export function Studio({
     setBrollMode(m);
     setPreset("custom");
   }
-  function changePacing(p: "natural" | "between" | "match") {
+  function changePacing(p: "natural" | "between" | "match" | "none") {
     setPacing(p);
     setPreset("custom");
   }
@@ -214,7 +214,7 @@ export function Studio({
   function loadTemplate(c: Record<string, unknown>) {
     if (c.ctl && typeof c.ctl === "object") setCtl({ ...BASE, ...(c.ctl as Partial<ControlState>) });
     if (typeof c.preset === "string") setPreset(c.preset as PresetName);
-    if (typeof c.pacing === "string") setPacing(c.pacing as "natural" | "between" | "match");
+    if (typeof c.pacing === "string") setPacing(c.pacing as "natural" | "between" | "match" | "none");
     if (typeof c.brollMode === "string") setBrollMode(c.brollMode as BrollMode);
     if (typeof c.brollQuality === "string") setBrollQuality(c.brollQuality as "fast" | "standard" | "ultra");
     if (typeof c.brollCaption === "boolean") setBrollCaption(c.brollCaption);
@@ -659,8 +659,8 @@ export function Studio({
         {mode === "simple" ? (
           <div className="space-y-5">
             <Segmented label="Pacing (how fast it cuts)" value={pacing}
-              options={[["natural", "Calm"], ["between", "Balanced"], ["match", "Punchy"]]}
-              onChange={(v) => changePacing(v as "natural" | "between" | "match")} />
+              options={[["none", "None"], ["natural", "Calm"], ["between", "Balanced"], ["match", "Punchy"]]}
+              onChange={(v) => changePacing(v as "natural" | "between" | "match" | "none")} />
             <Segmented label="Caption position" value={ctl.caption_zone}
               options={[["top", "Top"], ["center", "Center"], ["bottom", "Bottom"], ["auto", "Auto"]]}
               onChange={(v) => update({ caption_zone: v as ControlState["caption_zone"] })} />
@@ -778,8 +778,8 @@ export function Studio({
             <Disclosure title="Brand" subtitle="Watermark & pacing">
               <Toggle label="Show watermark (if brand has one)" checked={ctl.watermark} onChange={(v) => update({ watermark: v })} />
               <Segmented label="Pacing" value={pacing}
-                options={[["natural", "Calm"], ["between", "Balanced"], ["match", "Punchy"]]}
-                onChange={(v) => changePacing(v as "natural" | "between" | "match")} />
+                options={[["none", "None — no cutaways"], ["natural", "Calm"], ["between", "Balanced"], ["match", "Punchy"]]}
+                onChange={(v) => changePacing(v as "natural" | "between" | "match" | "none")} />
             </Disclosure>
           </div>
         )}

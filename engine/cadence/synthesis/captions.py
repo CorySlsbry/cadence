@@ -55,14 +55,14 @@ def build_ass(
         "ScriptType: v4.00+\n"
         f"PlayResX: {width}\n"
         f"PlayResY: {height}\n"
-        "WrapStyle: 2\n"
+        "WrapStyle: 1\n"
         "ScaledBorderAndShadow: yes\n\n"
         "[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, "
         "Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Cadence,{font_name},{font_size},{_ass_color(primary)},{_ass_color(outline)},"
-        f"&H64000000&,1,0,0,0,100,100,0,0,1,{outline_w},2,5,40,40,40,1\n\n"
+        f"&H64000000&,1,0,0,0,100,100,0,0,1,{outline_w},2,5,56,56,40,1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -105,6 +105,27 @@ def pick_keywords(word_texts: list[str]) -> set[int]:
     return keys
 
 
+def fit_font_size(
+    text: str,
+    base_size: int,
+    width: int,
+    *,
+    margin: int = 56,
+    min_scale: float = 0.55,
+) -> int:
+    """Font size that keeps ``text`` on ONE line inside the frame.
+
+    ASS karaoke lines can't wrap (WrapStyle 2), so a long group at full size runs off
+    screen. Bold Arial averages ~0.58em per character; when the estimated line width
+    exceeds the usable width the size shrinks proportionally, floored at ``min_scale``
+    so captions never become unreadably small."""
+    usable = max(width - 2 * margin, 50)
+    est = len(text) * 0.58 * base_size
+    if est <= usable:
+        return base_size
+    return max(int(base_size * usable / est), int(base_size * min_scale))
+
+
 def build_ass_karaoke(
     captions: list[Caption],
     *,
@@ -136,7 +157,7 @@ def build_ass_karaoke(
         "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Cadence,{font_name},{font_size},{pri},{out},&H64000000&,1,0,0,0,100,100,0,0,1,"
-        f"{outline_w},2,5,40,40,40,1\n\n"
+        f"{outline_w},2,5,56,56,40,1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -147,7 +168,15 @@ def build_ass_karaoke(
         if letterbox and cap.zone == TextZone.BOTTOM:
             anchor_y = min(anchor_y, bottom_safe_y)
         cy = round(anchor_y * height)
-        pos = f"{{\\an5\\pos({cx},{cy})}}"
+        # Karaoke lines can't wrap — shrink the font when a group would overflow the
+        # frame; if even the floored size can't fit (pathological text), allow that one
+        # line to smart-wrap (\q1) so it can NEVER leave the frame.
+        group_text = " ".join(w.text for w in cap.words) if cap.words else cap.text
+        fs = fit_font_size(group_text, font_size, width)
+        fs_tag = f"\\fs{fs}" if fs != font_size else ""
+        if len(group_text) * 0.58 * fs > (width - 2 * 56):
+            fs_tag += "\\q1"
+        pos = f"{{\\an5\\pos({cx},{cy}){fs_tag}}}"
         words = cap.words
         if not words:  # back-compat: a wordless caption renders as a single static line
             lines.append(
@@ -194,7 +223,7 @@ def build_hook_studio(
     """A bold, centered, animated opening HOOK card for the scroll-stopping first ~2.4s: the
     hook line scales in with a pop and fades. Returns a complete .ass document (rendered as
     its own overlay pass over the opening of the video)."""
-    font_size = max(48, round(height * 0.072))
+    font_size = fit_font_size(hook.upper(), max(48, round(height * 0.072)), width, margin=60, min_scale=0.5)
     outline_w = max(3, round(font_size * 0.07))
     cx, cy = width // 2, round(height * 0.42)
     header = (

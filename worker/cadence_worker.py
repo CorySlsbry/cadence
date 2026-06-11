@@ -816,8 +816,8 @@ class Worker:
         ``ctrl`` is the :class:`ParsedControls` bundle — its cinematography drives the
         AI image look so cutaways match the chosen lens/film/lighting."""
         mode = ctrl.broll_mode
-        if mode in ("none", "background"):
-            return []
+        if mode in ("none", "background") or ctrl.pacing == "none":
+            return []  # "None" pacing = zero cutaways, regardless of b-roll source
         gkey, gbyok = (keys or {}).get("gemini", (None, False))
         uploaded = self._download_broll(ctrl.broll_paths, tmp)
         brand_imgs = self._download_brand_images(brand, tmp)
