@@ -117,7 +117,7 @@ def _warmup() -> None:
             print(f"[gen] device={torch.cuda.get_device_name(0)}", flush=True)
         with _gpu_lock:
             pipe = _get_pipe("flux")
-            pipe("warmup frame, a simple gradient", num_inference_steps=1,
+            pipe(prompt="warmup frame, a simple gradient", num_inference_steps=1,
                  guidance_scale=1.0, height=512, width=512)
         _state["warm"] = True
         print("[gen] flux warm", flush=True)
@@ -150,7 +150,7 @@ def image(req: ImageReq, x_gen_token: str | None = Header(default=None)):
     gen = torch.Generator("cuda").manual_seed(req.seed) if req.seed is not None else None
     with _gpu_lock:
         pipe = _get_pipe("flux")
-        out = pipe(req.prompt, num_inference_steps=max(1, min(req.steps, 8)),
+        out = pipe(prompt=req.prompt, num_inference_steps=max(1, min(req.steps, 8)),
                    guidance_scale=1.0, height=h, width=w, generator=gen)
     img = out.images[0]
     buf = io.BytesIO()
