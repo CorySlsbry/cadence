@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret } from "@/lib/crypto";
+import { publicOrigin } from "@/lib/request-origin";
 import { SOCIAL, isSocialPlatform, verifyState } from "@/lib/social-oauth";
 
 // OAuth redirect target. Verify the signed-state cookie (CSRF + user id + PKCE verifier),
@@ -11,8 +12,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ plat
   if (!isSocialPlatform(platform)) return NextResponse.json({ error: "unknown platform" }, { status: 404 });
 
   const url = new URL(request.url);
+  const origin = publicOrigin(request);
   const back = (status: string) =>
-    NextResponse.redirect(new URL(`/connections?social=${platform}&status=${status}`, request.url));
+    NextResponse.redirect(`${origin}/connections?social=${platform}&status=${status}`);
 
   if (url.searchParams.get("error")) return back("denied");
 
