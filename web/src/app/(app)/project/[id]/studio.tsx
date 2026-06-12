@@ -111,6 +111,14 @@ const ANGLES: [string, string][] = [["eye_level", "Eye level"], ["low_angle", "L
 const SHOTS: [string, string][] = [["ecu", "Extreme CU"], ["closeup", "Close-up"], ["medium", "Medium"], ["wide", "Wide"], ["aerial", "Aerial"], ["ots", "OTS"]];
 const APERTURES = [1.4, 2.8, 5.6, 11, 16];
 
+// Decorative recording frames (transparent 1080x1920 PNGs in the public assets bucket).
+const FRAME_KEYS = ["neon", "film", "polaroid", "goldluxe", "tape", "hud", "softround", "blackmat", "grad", "spotlight"] as const;
+const FRAME_LABELS: Record<string, string> = {
+  neon: "Neon", film: "Film", polaroid: "Polaroid", goldluxe: "Gold", tape: "Tape",
+  hud: "HUD", softround: "Soft", blackmat: "Mat", grad: "Gradient", spotlight: "Spotlight",
+};
+const FRAMES_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/assets/frames`;
+
 export function Studio({
   project,
   boards: initialBoards,
@@ -141,6 +149,13 @@ export function Studio({
   const [resolution, setResolution] = useState<"1080p" | "4k">("1080p");
   const [musicPath, setMusicPath] = useState<string | null>(null);
   const [musicVolume, setMusicVolume] = useState(0.18);
+
+  // Decorative frame: preset key OR a user-uploaded transparent PNG (uploads bucket).
+  const [frameKey, setFrameKey] = useState<string | null>(null);
+  const [customFrame, setCustomFrame] = useState<string | null>(null);
+  const [customFrameUrl, setCustomFrameUrl] = useState<string | null>(null);
+  const [framesOpen, setFramesOpen] = useState(false);
+  const frameUrl = customFrameUrl ?? (frameKey ? `${FRAMES_BASE}/${frameKey}.png` : null);
 
   const [mode, setMode] = useState<"simple" | "pro">("simple");
   const [preset, setPreset] = useState<PresetName>("cinematic");
@@ -199,7 +214,7 @@ export function Studio({
   async function saveTemplate() {
     const name = window.prompt("Name this template (saves your current settings):")?.trim();
     if (!name) return;
-    const snapshot = { ctl, preset, pacing, brollMode, brollQuality, brollCaption, bgDynamic, multiclip, multiclipCount, autoReframe, resolution };
+    const snapshot = { ctl, preset, pacing, brollMode, brollQuality, brollCaption, bgDynamic, multiclip, multiclipCount, autoReframe, resolution, frameKey, customFrame };
     try {
       const r = await fetch("/api/templates", {
         method: "POST",
@@ -219,6 +234,8 @@ export function Studio({
     if (typeof c.brollQuality === "string") setBrollQuality(c.brollQuality as "fast" | "standard" | "ultra");
     if (typeof c.brollCaption === "boolean") setBrollCaption(c.brollCaption);
     if (typeof c.bgDynamic === "boolean") setBgDynamic(c.bgDynamic);
+    if (typeof c.frameKey === "string" || c.frameKey === null) { setFrameKey((c.frameKey as string) || null); setCustomFrame(null); setCustomFrameUrl(null); }
+    if (typeof c.customFrame === "string" && c.customFrame) { setCustomFrame(c.customFrame); setFrameKey(null); setCustomFrameUrl(null); }
     if (typeof c.multiclip === "boolean") setMulticlip(c.multiclip);
     if (typeof c.multiclipCount === "number") setMulticlipCount(c.multiclipCount);
     if (typeof c.autoReframe === "boolean") setAutoReframe(c.autoReframe);
@@ -318,10 +335,27 @@ export function Studio({
     await supabase.from("projects").update({ brand_board_id: id }).eq("id", project.id);
   }
 
+  async function onFrameUpload(file: File) {
+    try {
+      if (file.size > 8 * 1024 * 1024) { setError("Frame image must be under 8MB."); return; }
+      const ext = file.type === "image/webp" ? "webp" : "png";
+      const path = `${userId}/${project.id}/frame-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("uploads").upload(path, file, { upsert: true, contentType: file.type });
+      if (upErr) throw upErr;
+      setCustomFrame(path);
+      setCustomFrameUrl(URL.createObjectURL(file));
+      setFrameKey(null);
+    } catch (e) {
+      setError(msg(e));
+    }
+  }
+
   // -- generate ---------------------------------------------------------- //
   function buildCustomization(): Record<string, unknown> {
     return {
       preset: preset === "custom" ? undefined : preset,
+      frame_key: frameKey ?? undefined,
+      frame_path: customFrame ?? undefined,
       // CLEAN
       auto_clean: ctl.auto_clean,
       remove_silences: ctl.remove_silences,
@@ -509,12 +543,83 @@ export function Studio({
             <Recorder
               onRecorded={(blob) => onRecording(blob, "recording.webm", "webm")}
               onRecordStart={clearFootage}
+              frameUrl={frameUrl}
             />
           ) : (
             <FileButton accept="video/*" busy={uploading === "recording"}
               onFile={(f) => onRecording(f, f.name, f.name.split(".").pop() || "mp4")}
               label="Upload a raw clip" />
           )}
+
+          {/* -- decorative frame picker (collapsed; one tidy strip) ------- */}
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02]">
+            <button
+              type="button"
+              onClick={() => setFramesOpen((o) => !o)}
+              aria-expanded={framesOpen}
+              className="press flex w-full items-center justify-between px-3.5 py-2.5 text-sm"
+            >
+              <span className="font-medium text-white/80">Frame</span>
+              <span className="flex items-center gap-2 text-xs text-white/45">
+                {customFrame ? "Custom" : frameKey ? FRAME_LABELS[frameKey] : "None"}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                  className={`transition-transform ${framesOpen ? "rotate-180" : ""}`} aria-hidden>
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </span>
+            </button>
+            {framesOpen && (
+              <div className="border-t border-white/10 p-3">
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  <button
+                    type="button"
+                    onClick={() => { setFrameKey(null); setCustomFrame(null); setCustomFrameUrl(null); }}
+                    aria-pressed={!frameUrl}
+                    className={`press flex aspect-[9/16] h-20 shrink-0 items-center justify-center rounded-lg border text-[10px] font-medium ${!frameUrl ? "border-[var(--accent)] bg-[var(--accent)]/10 text-white" : "border-white/10 bg-white/[0.03] text-white/55 hover:bg-white/5"}`}
+                  >
+                    None
+                  </button>
+                  {FRAME_KEYS.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      title={FRAME_LABELS[k]}
+                      onClick={() => { setFrameKey(k); setCustomFrame(null); setCustomFrameUrl(null); }}
+                      aria-pressed={frameKey === k}
+                      className={`press relative aspect-[9/16] h-20 shrink-0 overflow-hidden rounded-lg border bg-black/60 ${frameKey === k ? "border-[var(--accent)] ring-1 ring-[var(--accent)]/50" : "border-white/10 hover:border-white/25"}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`${FRAMES_BASE}/${k}.png`} alt={FRAME_LABELS[k]} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+                    </button>
+                  ))}
+                  {customFrameUrl && (
+                    <button
+                      type="button"
+                      onClick={() => { setFrameKey(null); }}
+                      aria-pressed={!!customFrame}
+                      className={`press relative aspect-[9/16] h-20 shrink-0 overflow-hidden rounded-lg border bg-black/60 ${customFrame ? "border-[var(--accent)] ring-1 ring-[var(--accent)]/50" : "border-white/10"}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={customFrameUrl} alt="Custom frame" className="absolute inset-0 h-full w-full object-cover" />
+                    </button>
+                  )}
+                  <label className="press flex aspect-[9/16] h-20 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-white/20 text-[10px] font-medium text-white/55 hover:border-white/40 hover:text-white/80">
+                    <span className="text-base leading-none">+</span>
+                    Upload
+                    <input
+                      type="file"
+                      accept="image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) onFrameUpload(f); e.target.value = ""; }}
+                    />
+                  </label>
+                </div>
+                <p className="mt-1.5 text-[11px] text-white/35">
+                  Transparent PNG, 9:16. Keep the middle and lower third clear so captions stay readable.
+                </p>
+              </div>
+            )}
+          </div>
           {recordingPath && (
             <div className="mt-3 flex items-center gap-3">
               <Badge tone="good">{recordingName ?? "Footage"} ready</Badge>

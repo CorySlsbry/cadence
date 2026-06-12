@@ -307,6 +307,7 @@ class Worker:
                     scene_style=scene_style, scene_direction=scene_direction,
                     topic_title=topic_title, animate=animate,
                 )
+                out_path = self._maybe_apply_frame(job, user_id, tmp, out_path)
                 output_key = f"{user_id}/{job_id}.mp4"
                 self._upload(OUTPUTS, output_key, out_path)
                 credit = bool((job.get("customization") or {}).get("credit_cadence"))
@@ -413,6 +414,7 @@ class Worker:
                 except Exception as exc:  # noqa: BLE001 - never fail the render over the VO
                     print(f"[worker] voiceover failed ({exc}); keeping original audio", flush=True)
 
+            out_path = self._maybe_apply_frame(job, user_id, tmp, out_path)
             output_key = f"{user_id}/{job_id}.mp4"
             self._upload(OUTPUTS, output_key, out_path)
 
@@ -829,6 +831,44 @@ class Worker:
 
             print("[worker] WARN: ai_spend table unreachable; using local JSON ledger", flush=True)
             return CostLedger(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_spend.json"), cap)
+
+    FRAME_PRESETS = {"neon", "film", "polaroid", "goldluxe", "tape", "hud",
+                     "softround", "blackmat", "grad", "spotlight"}
+
+    def _maybe_apply_frame(self, job: dict, user_id: str, tmp: str, out_path: str) -> str:
+        """Composite the chosen decorative frame over the finished video.
+
+        customization.frame_key = preset name (public assets/frames/{key}.png) OR
+        customization.frame_path = user upload in the uploads bucket (own files only).
+        Fail-open: any problem keeps the unframed video."""
+        cz = job.get("customization") or {}
+        key = str(cz.get("frame_key") or "").strip()
+        path = str(cz.get("frame_path") or "").strip()
+        if not key and not path:
+            return out_path
+        try:
+            frame_local = os.path.join(tmp, "frame.png")
+            if key:
+                if key not in self.FRAME_PRESETS:
+                    print(f"[worker] unknown frame_key {key!r}; skipping frame", flush=True)
+                    return out_path
+                data = self.supabase.storage.from_("assets").download(f"frames/{key}.png")
+                with open(frame_local, "wb") as fh:
+                    fh.write(data)
+            else:
+                if not path.startswith(f"{user_id}/"):
+                    print("[worker] frame_path outside user folder; skipping frame", flush=True)
+                    return out_path
+                self._download(UPLOADS, path, frame_local)
+            from cadence.frame import apply_frame
+
+            framed = os.path.join(tmp, "framed.mp4")
+            apply_frame(self.ff, out_path, frame_local, framed)
+            print(f"[worker] frame applied ({key or path})", flush=True)
+            return framed
+        except Exception as exc:  # noqa: BLE001 - a frame must never kill a render
+            print(f"[worker] frame overlay failed ({exc!r}); keeping unframed video", flush=True)
+            return out_path
 
     def _image_generator(self, quality: str = "standard", gemini_key: str | None = None,
                          is_byok: bool = False, style: str = "photoreal"):

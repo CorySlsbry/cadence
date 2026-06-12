@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { Teleprompter } from "./teleprompter";
 
 /** In-browser A-roll capture (getUserMedia + MediaRecorder). The engine re-normalizes
- *  to 1080×1920/60fps CFR, so the exact webcam resolution doesn't need to be perfect. */
-export function Recorder({ onRecorded, onRecordStart }: { onRecorded: (blob: Blob) => void; onRecordStart?: () => void }) {
+ *  to 1080×1920/60fps CFR, so the exact webcam resolution doesn't need to be perfect.
+ *  `frameUrl` paints the chosen decorative frame over the live preview only — the real
+ *  compositing happens at render time, so the raw capture stays clean. */
+export function Recorder({ onRecorded, onRecordStart, frameUrl }: { onRecorded: (blob: Blob) => void; onRecordStart?: () => void; frameUrl?: string | null }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -116,6 +118,10 @@ export function Recorder({ onRecorded, onRecordStart }: { onRecorded: (blob: Blo
 
       <div className="relative mx-auto aspect-[9/16] max-w-[240px] overflow-hidden rounded-2xl border border-white/10 bg-black">
         <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+        {frameUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- live preview of the render-time frame
+          <img src={frameUrl} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-fill" />
+        )}
         {captureRes && !recording && (
           <span className="absolute right-3 top-3 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white/80">
             {captureRes}
