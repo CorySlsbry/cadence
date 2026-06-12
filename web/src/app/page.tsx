@@ -267,7 +267,11 @@ export default async function Landing() {
       </main>
 
       <footer className="border-t border-white/10 py-8 text-center text-xs text-white/40">
-        CloutHook · Studio-grade short-form video automation
+        <p>CloutHook · Studio-grade short-form video automation</p>
+        <p className="mt-2 space-x-4">
+          <a href="/privacy" className="transition-colors hover:text-white/70">Privacy</a>
+          <a href="/terms" className="transition-colors hover:text-white/70">Terms</a>
+        </p>
       </footer>
     </div>
   );
