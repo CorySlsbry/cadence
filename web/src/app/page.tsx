@@ -59,6 +59,18 @@ export default async function Landing() {
             <Logo size={24} />
           </Link>
           <nav className="flex items-center gap-1.5 sm:gap-2">
+            <Link
+              href="#how"
+              className="hidden min-h-11 items-center rounded-xl px-3 py-2 text-sm font-medium text-white/60 transition hover:text-white md:inline-flex"
+            >
+              How it works
+            </Link>
+            <Link
+              href={user ? "/affiliate" : "/login?next=/affiliate"}
+              className="hidden min-h-11 items-center rounded-xl px-3 py-2 text-sm font-medium text-white/60 transition hover:text-white sm:inline-flex"
+            >
+              Affiliates
+            </Link>
             {user ? (
               <Link
                 href="/dashboard"
@@ -69,16 +81,10 @@ export default async function Landing() {
             ) : (
               <>
                 <Link
-                  href="/login?next=/affiliate"
-                  className="hidden min-h-11 items-center rounded-xl px-3 py-2 text-sm font-medium text-white/60 transition hover:text-white sm:inline-flex"
-                >
-                  Affiliate
-                </Link>
-                <Link
                   href="/login"
                   className="inline-flex min-h-11 items-center rounded-xl px-3 py-2 text-sm font-medium text-white/75 transition hover:text-white"
                 >
-                  Sign in
+                  Log in
                 </Link>
                 <Link
                   href="/signup"
@@ -266,12 +272,42 @@ export default async function Landing() {
         </section>
       </main>
 
-      <footer className="border-t border-white/10 py-8 text-center text-xs text-white/40">
-        <p>CloutHook · Studio-grade short-form video automation</p>
-        <p className="mt-2 space-x-4">
-          <a href="/privacy" className="transition-colors hover:text-white/70">Privacy</a>
-          <a href="/terms" className="transition-colors hover:text-white/70">Terms</a>
-        </p>
+      <footer className="border-t border-white/10 px-6 py-10">
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 text-center">
+          <div>
+            <Logo size={22} />
+            <p className="mt-2 text-xs text-white/45">Studio-grade short-form video automation</p>
+          </div>
+
+          <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-white/50">
+            <Link href="#how" className="transition-colors hover:text-white/80">How it works</Link>
+            <Link href={user ? "/affiliate" : "/login?next=/affiliate"} className="transition-colors hover:text-white/80">Affiliates</Link>
+            <Link href="/signup" className="transition-colors hover:text-white/80">Start free</Link>
+            <a href="/privacy" className="transition-colors hover:text-white/80">Privacy Policy</a>
+            <a href="/terms" className="transition-colors hover:text-white/80">Terms of Service</a>
+            <a href="/privacy#data-deletion" className="transition-colors hover:text-white/80">Data deletion</a>
+          </nav>
+
+          <div className="text-xs text-white/45">
+            <p>
+              Support &amp; contact:{" "}
+              <a href="mailto:support@Neuron-HQ.com" className="text-white/70 transition-colors hover:text-white">
+                support@Neuron-HQ.com
+              </a>
+            </p>
+            <p className="mt-2 text-white/35">
+              © {new Date().getFullYear()} CloutHook — an app by{" "}
+              <a
+                href="https://neuron-hq.com"
+                target="_blank"
+                rel="noreferrer"
+                className="text-white/55 transition-colors hover:text-white"
+              >
+                Neuron HQ
+              </a>
+            </p>
+          </div>
+        </div>
       </footer>
     </div>
   );

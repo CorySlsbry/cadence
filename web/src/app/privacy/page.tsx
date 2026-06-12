@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 };
 
 const EFFECTIVE = "June 11, 2026";
-const CONTACT = "cory@salisburybookkeeping.com";
+const CONTACT = "support@Neuron-HQ.com";
 
 function H2({ id, children }: { id?: string; children: React.ReactNode }) {
   return <h2 id={id} className="mt-10 scroll-mt-24 text-lg font-semibold text-white">{children}</h2>;
