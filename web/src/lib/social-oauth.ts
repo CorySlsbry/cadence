@@ -43,7 +43,7 @@ type PlatformCfg = {
 };
 
 function env(name: string): string {
-  const v = process.env[name];
+  const v = process.env[name]?.trim(); // secret-mounted values can carry stray CR/LF
   if (!v) throw new Error(`${name} is not configured`);
   return v;
 }
