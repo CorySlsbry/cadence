@@ -7,11 +7,14 @@ import { Badge, Button, Card } from "@/components/ui";
 export type SocialStatus = { platform: string; username: string | null; expires_at: string | null };
 
 const META: Record<string, { label: string; why: string }> = {
+  x: { label: "X", why: "Post your videos straight to X." },
   youtube: { label: "YouTube", why: "Publish Shorts straight to your channel." },
-  tiktok: { label: "TikTok", why: "Post videos directly to your TikTok." },
   instagram: { label: "Instagram", why: "Publish Reels to your Instagram business account." },
+  facebook: { label: "Facebook", why: "Post videos to a Facebook Page you manage." },
+  linkedin: { label: "LinkedIn", why: "Share videos to your LinkedIn feed." },
+  tiktok: { label: "TikTok", why: "Post videos directly to your TikTok." },
 };
-const ORDER = ["youtube", "tiktok", "instagram"];
+const ORDER = ["x", "youtube", "instagram", "facebook", "linkedin", "tiktok"];
 
 export function SocialConnect({
   social,
