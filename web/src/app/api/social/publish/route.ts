@@ -12,10 +12,60 @@ import { SOCIAL, type SocialPlatform } from "@/lib/social-oauth";
 export const maxDuration = 300; // video upload + processing poll
 
 const Body = z.object({
-  platform: z.enum(["x", "youtube", "linkedin", "facebook", "instagram"]),
+  platform: z.enum(["x", "youtube", "linkedin", "facebook", "instagram", "tiktok"]),
   jobId: z.string().uuid(),
   caption: z.string().max(280).default(""),
 });
+
+async function tiktokPublish(access: string, video: Buffer, caption: string): Promise<string> {
+  // Inbox (draft) upload — works pre-audit: the video lands in the creator's TikTok
+  // inbox where they tap to finish the post in-app. Direct Post needs TikTok's audit.
+  const initRes = await fetch("https://open.tiktokapis.com/v2/post/publish/inbox/video/init/", {
+    method: "POST",
+    headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      source_info: {
+        source: "FILE_UPLOAD",
+        video_size: video.length,
+        chunk_size: video.length,
+        total_chunk_count: 1,
+      },
+    }),
+  });
+  const init = await initRes.json().catch(() => ({}));
+  const uploadUrl: string | undefined = init?.data?.upload_url;
+  const publishId: string | undefined = init?.data?.publish_id;
+  if (!initRes.ok || !uploadUrl || !publishId) {
+    throw new Error(`TikTok init failed (${initRes.status}): ${JSON.stringify(init).slice(0, 200)}`);
+  }
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": "video/mp4",
+      "content-range": `bytes 0-${video.length - 1}/${video.length}`,
+    },
+    body: Uint8Array.from(video),
+  });
+  if (!putRes.ok) throw new Error(`TikTok upload failed (${putRes.status})`);
+
+  const deadline = Date.now() + 180_000;
+  for (;;) {
+    const st = await fetch("https://open.tiktokapis.com/v2/post/publish/status/fetch/", {
+      method: "POST",
+      headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
+      body: JSON.stringify({ publish_id: publishId }),
+    });
+    const sj = await st.json().catch(() => ({}));
+    const status = sj?.data?.status;
+    if (status === "SEND_TO_USER_INBOX" || status === "PUBLISH_COMPLETE") break;
+    if (status === "FAILED") {
+      throw new Error(`TikTok rejected the video: ${sj?.data?.fail_reason ?? "unknown"}`);
+    }
+    if (Date.now() > deadline) throw new Error("TikTok processing timed out");
+    await new Promise((res) => setTimeout(res, 4000));
+  }
+  return "https://www.tiktok.com/tiktokstudio/content";
+}
 
 const LI_HEADERS = (access: string) => ({
   authorization: `Bearer ${access}`,
@@ -330,6 +380,14 @@ export async function POST(req: Request) {
     if (platform === "facebook") {
       const url = await facebookPublish(access, video, caption);
       return NextResponse.json({ ok: true, url });
+    }
+    if (platform === "tiktok") {
+      const url = await tiktokPublish(access, video, caption);
+      return NextResponse.json({
+        ok: true,
+        url,
+        note: "sent to your TikTok inbox — open the TikTok app to finish posting",
+      });
     }
     if (platform === "instagram") {
       if (!conn.platform_user_id) {

@@ -822,7 +822,7 @@ export function FacelessClient() {
           <div className="mx-auto max-w-[320px]">
             <p className="mb-1.5 text-center text-xs font-medium text-white/55">Post directly to</p>
             <div className="grid grid-cols-3 gap-1.5">
-              {([["x", "X"], ["instagram", "Instagram"], ["facebook", "Facebook"], ["linkedin", "LinkedIn"], ["youtube", "YouTube"]] as const).map(([p, label]) => (
+              {([["x", "X"], ["tiktok", "TikTok"], ["instagram", "Instagram"], ["facebook", "Facebook"], ["linkedin", "LinkedIn"], ["youtube", "YouTube"]] as const).map(([p, label]) => (
                 <button
                   key={p}
                   type="button"
