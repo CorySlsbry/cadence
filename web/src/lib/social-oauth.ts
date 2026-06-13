@@ -17,7 +17,14 @@ export function isSocialPlatform(p: string): p is SocialPlatform {
   return (SOCIAL_PLATFORMS as readonly string[]).includes(p);
 }
 
-const WEB_BASE = (process.env.CADENCE_WEB_BASE_URL || "https://cadence-web-840472456279.us-west1.run.app").replace(/\/$/, "");
+// Canonical public origin for OAuth redirect URIs. NEVER fall back to the Cloud Run
+// container URL silently — Google/X/Meta match the redirect_uri exactly against what's
+// registered (clouthook.com), so a 0.0.0.0/run.app value triggers redirect_uri_mismatch.
+const WEB_BASE = (
+  process.env.CADENCE_WEB_BASE_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  "https://clouthook.com"
+).replace(/\/$/, "");
 export const redirectUri = (platform: string) => `${WEB_BASE}/api/social/oauth/${platform}/callback`;
 
 export type TokenSet = {
