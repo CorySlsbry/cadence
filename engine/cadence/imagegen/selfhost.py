@@ -25,23 +25,46 @@ _SIZES = {
     "4x3": (1152, 896),
 }
 
+# Diffusion models render arbitrary text as gibberish, which reads as "trash" in the
+# background. Steer every GENERATED scene away from text; legible product UIs come from
+# real screenshots (the factual guardrail), not generation.
+_ANTI_TEXT = (
+    " Clean composition with no readable text, letters, words, captions, watermarks, logos, "
+    "or signage anywhere; any incidental on-screen text stays soft, blurred, and illegible."
+)
+
+
+def _augment_prompt(prompt: str) -> str:
+    p = (prompt or "").strip()
+    if "illegible" in p.lower():  # already augmented — don't double-append
+        return p
+    return (p.rstrip(". ") + "." + _ANTI_TEXT).strip()
+
 
 class SelfHostGenerator:
     name = "selfhost"
 
     def __init__(self, base_url: str, token: str, *, ledger: CostLedger | None = None,
-                 fallback=None, timeout: float = 240.0) -> None:
+                 fallback=None, timeout: float | None = None) -> None:
         # Secret-mounted env values can carry CRLF; urllib rejects \r\n in header values.
         self.base_url = base_url.strip().rstrip("/")
         self.token = token.strip()
         self.ledger = ledger
         self.fallback = fallback
-        self.timeout = timeout
+        # Wait for the (free, on-brand) self-host image even on a COLD cadence-gen — loading the 4B
+        # FLUX from the GCS FUSE mount can take minutes — before falling back to paid Imagen. Tunable
+        # via CADENCE_GEN_IMG_TIMEOUT (no rebuild); default 600s, under cadence-gen's own 1800s
+        # request timeout. Only the first (cold) image pays this; once warm, images are ~11s.
+        self.timeout = (
+            timeout if timeout is not None
+            else float(os.environ.get("CADENCE_GEN_IMG_TIMEOUT", "600"))
+        )
         self.cost_per_image = float(os.environ.get("CADENCE_SELFHOST_COST", "0.002"))
 
     def generate(self, prompt, *, aspect="9x16", style_refs=None, seed=None) -> GenResult:
         if self.ledger is not None and not self.ledger.can_spend(self.cost_per_image):
             raise BudgetExceeded(f"AI budget cap reached (need ${self.cost_per_image}).")
+        prompt = _augment_prompt(prompt)  # suppress garbled background text (also flows to fallback)
         w, h = _SIZES.get(aspect, _SIZES["9x16"])
         body = json.dumps({"prompt": prompt, "width": w, "height": h, "steps": 4,
                            **({"seed": seed} if seed is not None else {})}).encode()

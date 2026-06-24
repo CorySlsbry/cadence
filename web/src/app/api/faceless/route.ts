@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { geminiJson } from "@/lib/gemini";
 import { checkRenderAllowance } from "@/lib/limits";
+import { pokeWorker } from "@/lib/worker";
 
 // Faceless videos: topic/script → blueprint-voiced narration → Gemini TTS → the worker
 // turns it into AI scenes + karaoke captions. This route does everything up to "queued":
@@ -346,5 +347,6 @@ Return STRICT JSON: {"title": "scroll-stopping title (max 70 chars)", "body": "t
   if (error || !job) {
     return NextResponse.json({ error: error?.message ?? "could not enqueue" }, { status: 500 });
   }
+  await pokeWorker(); // start now instead of waiting for the every-minute drain tick
   return NextResponse.json({ jobId: job.id, title, script });
 }

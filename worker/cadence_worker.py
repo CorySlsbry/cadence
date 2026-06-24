@@ -178,6 +178,9 @@ class Worker:
         self._current_user_id: str | None = None
         self._current_job_id: str | None = None
         self._current_voice_ctx: str = ""  # the user's brand-blueprint prompt block ('' = generic)
+        # Avatar jobs are PREPAID at enqueue (web deducts the flat avatar token cost), so the
+        # per-scene token burn is suppressed for them. Global $ accounting still records.
+        self._prepaid: bool = False
 
     def _get_transcriber(self):
         if not self._transcriber_loaded:
@@ -209,10 +212,10 @@ class Worker:
                 continue
             try:
                 self._process(job)
-            except Exception as exc:  # noqa: BLE001 - report ANY failure on the job
+            except Exception as exc:  # noqa: BLE001 - self-heal transient failures, else error
                 traceback.print_exc()
                 try:
-                    self._update(job["id"], status="error", error=str(exc)[:2000], progress=0)
+                    self._fail_or_retry(job, exc)
                 except Exception:  # noqa: BLE001 - a reporting failure must not kill the daemon
                     traceback.print_exc()
 
@@ -236,11 +239,11 @@ class Worker:
             try:
                 self._process(job)
                 processed += 1
-            except Exception as exc:  # noqa: BLE001 - isolate the job, keep draining
+            except Exception as exc:  # noqa: BLE001 - isolate the job; self-heal transient failures
                 traceback.print_exc()
                 errored += 1
                 try:
-                    self._update(job["id"], status="error", error=str(exc)[:2000], progress=0)
+                    self._fail_or_retry(job, exc)
                 except Exception:  # noqa: BLE001
                     traceback.print_exc()
         return {"processed": processed, "errored": errored}
@@ -257,6 +260,49 @@ class Worker:
             return None
         return job
 
+    # -- failure handling: self-heal transient errors -------------------------- #
+    MAX_RENDER_ATTEMPTS = 3
+    RETRYABLE_PATTERNS = (
+        "timed out", "timeout", "eof occurred", "ssl", "connection reset",
+        "connection aborted", "connection error", "broken pipe", "temporarily unavailable",
+        "max retries", "read operation", "rate limit", "429", "502", "503", "504",
+        "remotedisconnected", "name or service not known", "503 service",
+    )
+    # Deterministic failures (bad input / quota / permission) that must NEVER loop.
+    HARD_PATTERNS = (
+        "no video stream", "payload too large", "413", "out of tokens", "insufficient",
+        "creator-plan", "consent", "unauthorized", "invalid request", "unsupported",
+        "no face detected", "empty script",
+    )
+
+    def _is_retryable(self, msg: str) -> bool:
+        m = (msg or "").lower()
+        if any(h in m for h in self.HARD_PATTERNS):
+            return False
+        return any(p in m for p in self.RETRYABLE_PATTERNS)
+
+    def _fail_or_retry(self, job: dict[str, Any], exc: Exception) -> None:
+        """Transient failures (network/timeout/SSL/5xx) self-heal: re-queue with backoff up to
+        MAX_RENDER_ATTEMPTS so a render finishes end-to-end without the user re-clicking.
+        Deterministic failures (bad input, quota, permission) error immediately with the message."""
+        job_id = job["id"]
+        msg = str(exc)
+        try:
+            cur = self.supabase.table("render_jobs").select("attempts").eq("id", job_id).single().execute()
+            attempts = int((cur.data or {}).get("attempts") or 0) if getattr(cur, "data", None) else 0
+        except Exception:  # noqa: BLE001 - if the count is unreadable, treat as the last attempt
+            attempts = self.MAX_RENDER_ATTEMPTS
+        if self._is_retryable(msg) and attempts + 1 < self.MAX_RENDER_ATTEMPTS:
+            backoff = min(20, 5 * (attempts + 1))
+            print(f"[worker] job {job_id} transient failure "
+                  f"(attempt {attempts + 1}/{self.MAX_RENDER_ATTEMPTS}); re-queue in {backoff}s: {msg[:200]}",
+                  flush=True)
+            time.sleep(backoff)
+            self._update(job_id, status="queued", attempts=attempts + 1, progress=0,
+                         error=f"auto-retry {attempts + 1}/{self.MAX_RENDER_ATTEMPTS}: {msg[:300]}")
+        else:
+            self._update(job_id, status="error", error=msg[:2000], progress=0)
+
     # -- job processing ----------------------------------------------------- #
     def _process(self, job: dict[str, Any]) -> None:
         job_id = job["id"]
@@ -265,6 +311,7 @@ class Worker:
         # (concurrency is 1, so instance state is safe). BYOK images bypass metering.
         self._current_user_id = user_id
         self._current_job_id = job_id
+        self._prepaid = False
         print(f"[worker] claimed job {job_id}", flush=True)
         keys = self._resolve_keys(user_id)  # per-user BYOK keys (or shared fallback) for every AI call
         self._current_voice_ctx = self._load_voice_ctx(user_id)  # blueprint personalization ('' = generic)
@@ -319,6 +366,35 @@ class Worker:
                     hooks=hooks, repurpose=repurpose, error=None,
                 )
                 print(f"[worker] job {job_id} done (faceless) -> {output_key}", flush=True)
+                return
+
+            # Avatar mode: the "recording" is the narration (the user's cloned voice); a
+            # photoreal talking head is lip-synced from their reference, then composited
+            # into the Looks (presenter) or finished standalone.
+            av = (job.get("customization") or {}).get("avatar")
+            if av and not job.get("plan"):
+                # Authoritative billing AT THE GPU (the web route's checks are advisory and
+                # bypassable via a direct render_jobs insert): Creator-gate + monthly cap + the
+                # flat charge, BEFORE any render. Then suppress per-scene burn (no double-charge).
+                self._enforce_avatar_billing(user_id, job_id)
+                self._prepaid = True
+                out_path = os.path.join(tmp, "final.mp4")
+                fc2 = (job.get("customization") or {}).get("faceless") or {}
+                result = self._render_avatar(
+                    recording, ctrl, tmp, out_path, av, keys, music_path,
+                    scene_style=str(fc2.get("scene_style") or "") if isinstance(fc2, dict) else "",
+                    scene_direction=(str(fc2.get("scene_direction") or "")[:1400] if isinstance(fc2, dict) else ""),
+                    topic_title=str(fc2.get("topic") or "")[:200] if isinstance(fc2, dict) else "",
+                    animate=bool(fc2.get("animate")) if isinstance(fc2, dict) else False,
+                )
+                out_path = self._maybe_apply_frame(job, user_id, tmp, out_path)
+                output_key = f"{user_id}/{job_id}.mp4"
+                self._upload(OUTPUTS, output_key, out_path)
+                self._update(
+                    job_id, status="done", progress=1.0, output_path=output_key,
+                    result=result.to_dict() if hasattr(result, "to_dict") else None, error=None,
+                )
+                print(f"[worker] job {job_id} done (avatar) -> {output_key}", flush=True)
                 return
 
             transcript = None
@@ -731,6 +807,132 @@ class Worker:
             print(f"[worker] extras generation failed ({exc})", flush=True)
             return None, None
 
+    def _render_avatar(self, audio_path, ctrl, tmp, out_path, av, keys=None, music_path=None,
+                       scene_style="", scene_direction="", topic_title="", animate=False):
+        """Photoreal talking-avatar render. The user's recorded reference + the narration
+        (their cloned voice) drive a lip-synced talking head on cadence-gen's /lipsync; it's
+        then composited into the faceless Looks (presenter) or finished standalone.
+
+        Consent is FAIL-CLOSED: a non-revoked consent_records row must exist for the
+        character or we refuse. Returns the presenter RenderResult (for social extras) or
+        None (standalone)."""
+        from cadence.avatar.compose import compose_avatar_presenter
+        from cadence.avatar.lipsync import LipsyncClient
+
+        char_id = str(av.get("character_id") or "")
+        mode = str(av.get("mode") or "standalone").lower()
+        framing = str(av.get("framing") or "lower_third").lower()
+        if not char_id:
+            raise RuntimeError("avatar: no character_id on the job")
+
+        # 1) Load the avatar (worker uses the service role → bypasses RLS).
+        crow = (self.supabase.table("characters")
+                .select("source_path,source_kind,voice_id,kind")
+                .eq("id", char_id).single().execute()).data
+        if not crow or crow.get("kind") != "photoreal" or not crow.get("source_path"):
+            raise RuntimeError("avatar: character missing or not photoreal")
+
+        # 2) Consent FAIL-CLOSED — never render a likeness without active consent.
+        consent = (self.supabase.table("consent_records")
+                   .select("id").eq("character_id", char_id)
+                   .is_("revoked_at", "null").limit(1).execute()).data
+        if not consent:
+            raise RuntimeError("avatar: no active consent on file — refusing to render")
+
+        # 3) Download the reference clip/frame.
+        is_video = (crow.get("source_kind") or "video") == "video"
+        ref_path = self._download(
+            UPLOADS, crow["source_path"],
+            os.path.join(tmp, "avref" + (".mp4" if is_video else ".png")),
+        )
+
+        # 4) Lip-sync the reference to the narration on our GPU.
+        gen_url = os.environ.get("CADENCE_GEN_URL")
+        gen_token = os.environ.get("CADENCE_GEN_TOKEN")
+        if not (gen_url and gen_token):
+            raise RuntimeError("avatar: cadence-gen not configured (CADENCE_GEN_URL/TOKEN)")
+        client = LipsyncClient(
+            gen_url, gen_token,
+            ledger=self._ledger(float(os.environ.get("CADENCE_AI_BUDGET_USD", "10"))),
+        )
+        with open(ref_path, "rb") as fh:
+            ref_bytes = fh.read()
+        with open(audio_path, "rb") as fh:
+            audio_bytes = fh.read()
+        if self._current_job_id:
+            self._update(self._current_job_id, progress=0.5)
+        res = client.synth(audio=audio_bytes, reference=ref_bytes, is_video=is_video,
+                           res=min(int(ctrl.synthesis.height), 1080), fps=30)
+        avatar_clip = os.path.join(tmp, "avatar_clip.mp4")
+        with open(avatar_clip, "wb") as fh:
+            fh.write(res.video_bytes)
+        if self._current_job_id:
+            self._update(self._current_job_id, progress=0.72)
+
+        if mode == "presenter":
+            # Render the faceless scene track (AI b-roll + captions), then matte the avatar
+            # over it per the framing preset.
+            scenes_path = os.path.join(tmp, "av_scenes.mp4")
+            faceless_res, _edl = self._render_faceless(
+                audio_path, ctrl, tmp, scenes_path, keys, music_path,
+                scene_style=scene_style, scene_direction=scene_direction,
+                topic_title=topic_title, animate=animate,
+            )
+            compose_avatar_presenter(
+                avatar_clip, scenes_path, out_path, ff=self.ff,
+                width=int(ctrl.synthesis.width), height=int(ctrl.synthesis.height),
+                fps=30, framing=framing,
+            )
+            return faceless_res
+
+        # Standalone: burn karaoke captions onto the talking head (it already carries the
+        # narration audio from the lip-sync).
+        self._finish_avatar_standalone(avatar_clip, audio_path, ctrl, tmp, out_path)
+        return None
+
+    def _finish_avatar_standalone(self, avatar_clip, audio_path, ctrl, tmp, out_path):
+        """Burn karaoke captions onto a standalone talking-head clip. The clip already
+        carries the narration audio (from the lip-sync), so audio = [0:a]. Mirrors the
+        faceless caption finish (ASR → group_karaoke_captions → build_ass_karaoke → burn)."""
+        from cadence.models import CaptionStyle, TextZone
+        from cadence.synthesis.captions import build_ass_karaoke
+        from cadence.synthesis.plan import group_karaoke_captions
+
+        w, h, fps = ctrl.synthesis.width, ctrl.synthesis.height, 30
+        vf_parts: list[str] = []
+        if ctrl.toggles.captions:
+            tr = None
+            transcriber = self._get_transcriber()
+            if transcriber is not None:
+                try:
+                    tr = transcriber.transcribe(audio_path, ff=self.ff)
+                except Exception as exc:  # noqa: BLE001 - captions are optional; never fail the render
+                    print(f"[worker] avatar: caption ASR failed ({exc!r}); no captions", flush=True)
+            if tr and tr.words:
+                words_out = [(wd.text, wd.start, wd.end) for wd in tr.words]
+                zone_name = ctrl.synthesis.caption_default_zone
+                zone = TextZone(zone_name) if zone_name in ("top", "center", "bottom") else TextZone("bottom")
+                try:
+                    style = CaptionStyle(ctrl.synthesis.caption_default_style)
+                except ValueError:
+                    style = CaptionStyle.POP
+                caps = group_karaoke_captions(words_out, zone=zone, style=style)
+                ass_path = os.path.join(tmp, "av_captions.ass")
+                with open(ass_path, "w", encoding="utf-8") as fh:
+                    fh.write(build_ass_karaoke(caps, width=w, height=h))
+                vf_parts.append(f"subtitles='{ass_path}'")
+        vchain = "[0:v]" + (",".join(vf_parts) + "," if vf_parts else "") + "format=yuv420p[outv]"
+        args = [
+            "-y", "-i", avatar_clip,
+            "-filter_complex", f"{vchain};[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[outa]",
+            "-map", "[outv]", "-map", "[outa]",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "19" if w <= 1080 else "20",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-r", str(fps),
+            "-c:a", "aac", "-b:a", "192k", out_path,
+        ]
+        self.ff.run(args, timeout=1800)
+        return out_path
+
     def _render_multiclip(self, recording, ctrl, brand, analysis, transcript, duration,
                           music_path, tmp, user_id, job_id, max_clips, keys=None):
         """Find the best moments and render each as a standalone short. Returns a list of
@@ -819,13 +1021,55 @@ class Worker:
             caption_font_path=b.get("caption_font_path"),
         )
 
+    def _enforce_avatar_billing(self, user_id: str | None, job_id: str) -> None:
+        """Authoritative avatar gate AT THE GPU CHOKE POINT (the web route's checks are advisory
+        and bypassable via a direct render_jobs insert): Creator-tier only, a flat per-video token
+        charge, and a monthly cap — all BEFORE any lipsync. Raises (-> the run loop marks the job
+        'error' with the message) on any failure. concurrency=1 makes count + charge race-free."""
+        AVATAR_TOKEN_COST = 8
+        AVATAR_MONTHLY_CAP = 20
+        if not user_id:
+            raise RuntimeError("avatar render requires a signed-in user")
+        prof = self.supabase.table("profiles").select("plan").eq("id", user_id).single().execute()
+        plan = (prof.data or {}).get("plan") if getattr(prof, "data", None) else None
+        if plan not in ("creator", "admin"):
+            raise RuntimeError("Photoreal avatars are a Creator-plan feature.")
+        from datetime import datetime, timezone
+
+        month_start = (
+            datetime.now(timezone.utc)
+            .replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            .isoformat()
+        )
+        cnt = (
+            self.supabase.table("render_jobs")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .eq("status", "done")
+            .gte("created_at", month_start)
+            .filter("customization->avatar", "not.is", "null")
+            .execute()
+        )
+        if (getattr(cnt, "count", 0) or 0) >= AVATAR_MONTHLY_CAP:
+            raise RuntimeError(f"Monthly limit of {AVATAR_MONTHLY_CAP} avatar videos reached.")
+        try:
+            # spend_tokens RAISES on insufficient balance (atomic decrement).
+            self.supabase.rpc(
+                "spend_tokens", {"p_user": user_id, "p_n": AVATAR_TOKEN_COST, "p_job": job_id}
+            ).execute()
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"Avatar videos cost {AVATAR_TOKEN_COST} tokens — insufficient balance."
+            ) from exc
+
     def _ledger(self, cap: float):
         """Durable Supabase-backed cap; falls back to a local JSON ledger only if the
         ai_spend table/RPC isn't reachable (e.g. an old DB without the migration)."""
         try:
             # Probe: a successful select confirms the table exists + the worker can read it.
             self.supabase.table("ai_spend").select("id").eq("id", 1).limit(1).execute()
-            return SupabaseCostLedger(self.supabase, cap, self._current_user_id, self._current_job_id)
+            ledger_user = None if self._prepaid else self._current_user_id
+            return SupabaseCostLedger(self.supabase, cap, ledger_user, self._current_job_id)
         except Exception:  # noqa: BLE001
             from cadence.imagegen.ledger import CostLedger
 

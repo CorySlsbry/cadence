@@ -1,0 +1,30 @@
+# In-cloud vendoring of LatentSync 1.6 inference weights -> the GCS models bucket.
+# HF->GCS transfer runs inside GCP (fast egress, no local bandwidth). Weights are
+# mounted read-only at /models on cadence-gen at runtime. Submit with:
+#   gcloud builds submit --no-source --region us-central1 --config gen/cloudbuild-vendor-latentsync.yaml
+# Only inference-path files (UNet + whisper-tiny + sd-vae-ft-mse). SyncNet/auxiliary are
+# training/eval-only and skipped (~4.5GB saved). All sources are ungated/public.
+steps:
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        python3 -m pip install -q --break-system-packages "huggingface_hub[cli]==0.30.2"
+        mkdir -p /workspace/ls /workspace/vae
+        echo "== download: LatentSync UNet (5.07GB) + whisper tiny (75MB) =="
+        huggingface-cli download ByteDance/LatentSync-1.6 latentsync_unet.pt --local-dir /workspace/ls
+        huggingface-cli download ByteDance/LatentSync-1.6 whisper/tiny.pt --local-dir /workspace/ls
+        echo "== download: sd-vae-ft-mse (335MB, must be pre-baked; gen image is HF_HUB_OFFLINE) =="
+        huggingface-cli download stabilityai/sd-vae-ft-mse diffusion_pytorch_model.safetensors config.json --local-dir /workspace/vae
+        echo "== upload to gs://cadence-gen-models-uscentral1/latentsync/checkpoints/ =="
+        gsutil -m cp /workspace/ls/latentsync_unet.pt gs://cadence-gen-models-uscentral1/latentsync/checkpoints/latentsync_unet.pt
+        gsutil -m cp /workspace/ls/whisper/tiny.pt gs://cadence-gen-models-uscentral1/latentsync/checkpoints/whisper/tiny.pt
+        gsutil -m rsync -r /workspace/vae gs://cadence-gen-models-uscentral1/latentsync/checkpoints/sd-vae-ft-mse
+        echo "== verify =="
+        gsutil ls -lr gs://cadence-gen-models-uscentral1/latentsync/checkpoints/
+timeout: 2400s
+options:
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 50

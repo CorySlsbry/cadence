@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Card } from "@/components/ui";
+import AvatarStudio from "./avatar-studio";
 
 // Faceless studio: topic/script → narrated, AI-scene short. The form queues a job
 // (script gen + TTS happen in /api/faceless); this view then tells the truth about
@@ -127,6 +128,7 @@ export function FacelessClient() {
   const [avatarSel, setAvatarSel] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+  const [showAvatarStudio, setShowAvatarStudio] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement | null>(null);
   const [lengthSec, setLengthSec] = useState<"30" | "60" | "90">("60");
   const [resolution, setResolution] = useState<"1080p" | "4k">("1080p");
@@ -159,6 +161,9 @@ export function FacelessClient() {
   const [job, setJob] = useState<JobRow | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [autoGen, setAutoGen] = useState(false);
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFiredInput = useRef<string>("");
 
   const scenes = Math.max(3, Math.min(Math.round(Number(lengthSec) / 7), 16));
 
@@ -168,6 +173,9 @@ export function FacelessClient() {
     audioRef.current?.pause();
     recRef.current?.stream.getTracks().forEach((t) => t.stop());
   }, []);
+
+  // Auto-generate is opt-in and remembered per browser.
+  useEffect(() => { setAutoGen(localStorage.getItem("ch_autogen") === "1"); }, []);
 
   useEffect(() => {
     fetch("/api/faceless/voices")
@@ -415,6 +423,25 @@ export function FacelessClient() {
   const clonedVoices = elVoices.filter((v) => v.category !== "premade");
   const premadeVoices = elVoices.filter((v) => v.category === "premade");
 
+  // Opt-in auto-generate: fire the render ~3.5s after the input is valid AND stable (idle, no
+  // active job), once per DISTINCT input — never mid-typing, never a surprise repeat on the same
+  // text. The explicit "Generate" button always works regardless of this toggle.
+  useEffect(() => {
+    if (autoTimer.current) { clearTimeout(autoTimer.current); autoTimer.current = null; }
+    if (!autoGen || !inputOk || busy || job) return;
+    const sig = mode === "topic" ? `t:${topic.trim()}` : `s:${script.trim()}`;
+    if (lastFiredInput.current === sig) return;
+    autoTimer.current = setTimeout(() => {
+      const now = mode === "topic" ? `t:${topic.trim()}` : `s:${script.trim()}`;
+      if (autoGen && inputOk && !busy && !job && lastFiredInput.current !== now) {
+        lastFiredInput.current = now;
+        generate();
+      }
+    }, 3500);
+    return () => { if (autoTimer.current) clearTimeout(autoTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGen, inputOk, busy, job, topic, script, mode]);
+
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
       <p className="text-sm font-semibold text-[var(--accent)]">Faceless studio</p>
@@ -461,17 +488,27 @@ export function FacelessClient() {
                 <div>
                   <p className="text-sm font-semibold">Star yourself</p>
                   <p className="mt-0.5 text-xs text-white/50">
-                    Upload 1–3 photos of yourself — your avatar appears in every scene, drawn in the Look you pick.
+                    <b className="text-white/70">Photoreal:</b> record yourself → a real talking clone in your voice.
+                    Or <b className="text-white/70">Drawn:</b> 1–3 photos → a stylized you in every scene.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  disabled={avatarBusy}
-                  onClick={() => avatarFileRef.current?.click()}
-                  className="press shrink-0 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--accent)]/20 disabled:opacity-50"
-                >
-                  {avatarBusy ? "Reading photos…" : avatars.length ? "+ New avatar" : "Create my avatar"}
-                </button>
+                <div className="flex shrink-0 flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAvatarStudio(true)}
+                    className="press rounded-lg bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90"
+                  >
+                    ✨ Photoreal avatar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={avatarBusy}
+                    onClick={() => avatarFileRef.current?.click()}
+                    className="press rounded-lg border border-white/15 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-50"
+                  >
+                    {avatarBusy ? "Reading photos…" : "Drawn (from photos)"}
+                  </button>
+                </div>
               </div>
               <input
                 ref={avatarFileRef}
@@ -513,6 +550,7 @@ export function FacelessClient() {
                 </div>
               )}
               {avatarMsg && <p className="mt-2 text-xs text-white/55">{avatarMsg}</p>}
+              {showAvatarStudio && <AvatarStudio onClose={() => setShowAvatarStudio(false)} />}
             </div>
           )}
 
@@ -761,6 +799,20 @@ export function FacelessClient() {
             </p>
           )}
 
+          <label className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2">
+            <span className="text-xs text-white/55">
+              <b className="text-white/80">Auto-generate</b> — start ~3s after your {mode === "topic" ? "topic" : "script"} is ready, no click
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoGen}
+              onClick={() => setAutoGen((v) => { const nv = !v; try { localStorage.setItem("ch_autogen", nv ? "1" : "0"); } catch { /* ignore */ } return nv; })}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${autoGen ? "bg-[var(--accent)]" : "bg-white/15"}`}
+            >
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${autoGen ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+            </button>
+          </label>
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-white/45">
               ≈ {scenes} AI scenes · {sceneMode === "motion" ? scenes * 3 : scenes} tokens

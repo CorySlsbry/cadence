@@ -14,3 +14,8 @@ kokoro-onnx==0.5.0
 soundfile>=0.12
 numpy>=2.0.2
 python-multipart
+# /lipsync avatar lane: face gate (Apache-2.0, not InsightFace) + video frame IO.
+# The talking-avatar model weights/repo (EchoMimicV3, LatentSync, GFPGAN) are vendored
+# to the GCS models mount at deploy and invoked via ECHOMIMIC_CMD/LATENTSYNC_CMD.
+mediapipe>=0.10.18
+opencv-python-headless>=4.10

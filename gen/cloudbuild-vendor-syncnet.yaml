@@ -1,0 +1,25 @@
+# Vendor the SyncNet LSE-C eval weights (the /syncscore quality metric) to the models bucket.
+#   gcloud builds submit --no-source --region us-central1 --config gen/cloudbuild-vendor-syncnet.yaml
+# Only the two files the sync-confidence scorer loads: syncnet_v2.model + sfd_face.pth (the rest of
+# the HF auxiliary/ folder is FVD/IQA/training eval, skipped). Both are read at runtime via the
+# repo-relative checkpoints/auxiliary symlinks (the gen image is HF_HUB_OFFLINE so no auto-download).
+steps:
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        python3 -m pip install -q --break-system-packages "huggingface_hub[cli]==0.30.2"
+        mkdir -p /workspace/aux
+        echo "== download: syncnet_v2.model + sfd_face.pth (LatentSync-1.6 auxiliary) =="
+        huggingface-cli download ByteDance/LatentSync-1.6 auxiliary/syncnet_v2.model --local-dir /workspace/aux
+        huggingface-cli download ByteDance/LatentSync-1.6 auxiliary/sfd_face.pth --local-dir /workspace/aux
+        echo "== upload to gs://cadence-gen-models-uscentral1/latentsync/checkpoints/auxiliary/ =="
+        gsutil -m cp /workspace/aux/auxiliary/syncnet_v2.model gs://cadence-gen-models-uscentral1/latentsync/checkpoints/auxiliary/syncnet_v2.model
+        gsutil -m cp /workspace/aux/auxiliary/sfd_face.pth gs://cadence-gen-models-uscentral1/latentsync/checkpoints/auxiliary/sfd_face.pth
+        echo "== verify =="
+        gsutil ls -l gs://cadence-gen-models-uscentral1/latentsync/checkpoints/auxiliary/
+timeout: 1200s
+options:
+  machineType: 'E2_HIGHCPU_8'

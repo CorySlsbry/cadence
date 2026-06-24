@@ -231,3 +231,183 @@ def tts(req: TtsReq, x_gen_token: str | None = Header(default=None)):
     buf = io.BytesIO()
     sf.write(buf, audio, 24000, format="WAV", subtype="PCM_16")
     return Response(content=buf.getvalue(), media_type="audio/wav")
+
+
+# ============================================================================
+# /lipsync — self-hosted PHOTOREAL talking avatar (the "host it ourselves" path)
+#
+# Two reference modes, chosen by which input is sent:
+#   • video_b64 → re-sync the lips on a REAL recording of the user (LatentSync).
+#       Highest realism: the base is genuine footage, only the mouth is regenerated.
+#   • image_b64 → generate a talking head from one frame (EchoMimicV3).
+# Driven by `audio_b64` (the final cloned-voice narration), so lip-sync is
+# frame-accurate by construction.
+#
+# Design notes (match the rest of this service):
+#   • Serializes on `_gpu_lock` and FREES the resident diffusers model first — a
+#     talking-avatar render owns the L4 for its duration (concurrency=1). At volume
+#     this lip-sync lane moves to a SECOND GPU; fine for low volume / the owner.
+#   • Face detection uses MediaPipe (Apache-2.0), NOT InsightFace (non-commercial
+#     pretrained weights) — keeps the self-host tier commercially clean.
+#   • The model itself is invoked via a deploy-time COMMAND TEMPLATE from env
+#     (ECHOMIMIC_CMD / LATENTSYNC_CMD), so vendoring the repo + weights to the GCS
+#     mount needs NO code change here. Until those are set we 503 with a clear reason
+#     (scaffold-safe: the rest of the stack builds against a stable contract).
+#
+# Command template placeholders: {ref} {audio} {out} {fps} {res} {models}
+# e.g. ECHOMIMIC_CMD="python /models/echomimic_v3/infer.py --ref {ref} --audio {audio}
+#       --out {out} --fps {fps} --size {res}"
+# ============================================================================
+
+import shlex
+import subprocess
+
+_FACE_DET = {"engine": None, "lock": threading.Lock()}
+
+
+def _get_face_detector():
+    """OpenCV Haar cascade (BSD, bundled with opencv-python-headless) — numpy-2 safe and
+    dependency-light. A quality/abuse gate: refuse references with no detectable face.
+    (Replaced MediaPipe, whose `solutions` API fails to load under the image's numpy 2;
+    still avoids InsightFace's non-commercial weights, so the self-host tier stays clean.)"""
+    if _FACE_DET["engine"] is None:
+        with _FACE_DET["lock"]:
+            if _FACE_DET["engine"] is None:
+                import cv2
+
+                _FACE_DET["engine"] = cv2.CascadeClassifier(
+                    os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
+                )
+    return _FACE_DET["engine"]
+
+
+def _first_frame(video_path: str):
+    import cv2  # opencv-python-headless
+
+    cap = cv2.VideoCapture(video_path)
+    ok, frame = cap.read()
+    cap.release()
+    if not ok:
+        raise HTTPException(status_code=422, detail="could not read the reference video")
+    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+
+def _has_face(rgb) -> bool:
+    import cv2
+    import numpy as _np
+
+    gray = cv2.cvtColor(_np.ascontiguousarray(rgb), cv2.COLOR_RGB2GRAY)
+    faces = _get_face_detector().detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+    )
+    return len(faces) > 0
+
+
+class LipsyncReq(BaseModel):
+    audio_b64: str                       # driving narration (wav/mp3), already the user's voice
+    video_b64: str | None = None         # real recording → LatentSync re-sync (preferred)
+    image_b64: str | None = None         # single frame → EchoMimicV3 generate
+    fps: int = 25
+    res: int = 720                        # max side; 1080 for premium
+    upscale: bool = True                  # GFPGAN face restore (Apache) when available
+    steps: int = 20                       # LatentSync --inference_steps (quality sweep knob)
+    guidance: float = 1.5                 # LatentSync --guidance_scale (lip-sync strength)
+
+
+def _run_model_cmd(env_key: str, ref: str, audio: str, out: str, fps: int, res: int,
+                   steps: int = 20, guidance: float = 1.5) -> None:
+    """Invoke the vendored avatar model via its env command template. The template is
+    the single deploy-time integration point — no code change to swap/upgrade models."""
+    tmpl = os.environ.get(env_key, "").strip()
+    if not tmpl:
+        raise HTTPException(
+            status_code=503,
+            detail=f"avatar model not provisioned ({env_key} unset) — weights/repo not deployed yet",
+        )
+    cmd = tmpl.format(ref=shlex.quote(ref), audio=shlex.quote(audio), out=shlex.quote(out),
+                      fps=fps, res=res, steps=steps, guidance=guidance, models=MODELS_DIR)
+    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=3000)
+    if proc.returncode != 0 or not os.path.exists(out):
+        # Print the real failure — a silent degrade here cost us days elsewhere.
+        print(f"[gen] lipsync model failed rc={proc.returncode}: {proc.stderr[-800:]}", flush=True)
+        raise HTTPException(status_code=500, detail="avatar render failed")
+
+
+@app.post("/lipsync")
+def lipsync(req: LipsyncReq, x_gen_token: str | None = Header(default=None)):
+    _auth(x_gen_token)
+    if not req.audio_b64 or not (req.video_b64 or req.image_b64):
+        raise HTTPException(status_code=422, detail="audio_b64 + one of video_b64/image_b64 required")
+
+    is_video = bool(req.video_b64)
+    ref_suffix = ".mp4" if is_video else ".png"
+    tmp = tempfile.mkdtemp(prefix="lipsync_")
+    ref_path = os.path.join(tmp, f"ref{ref_suffix}")
+    audio_path = os.path.join(tmp, "audio.wav")
+    out_path = os.path.join(tmp, "out.mp4")
+    with open(ref_path, "wb") as f:
+        f.write(base64.b64decode(req.video_b64 or req.image_b64))
+    with open(audio_path, "wb") as f:
+        f.write(base64.b64decode(req.audio_b64))
+
+    # Abuse/quality gate: the reference MUST contain a real, detectable face.
+    rgb = _first_frame(ref_path) if is_video else _read_image_rgb(ref_path)
+    if not _has_face(rgb):
+        raise HTTPException(status_code=422, detail="no face detected in the reference")
+
+    res = max(256, min(int(req.res), 1080))
+    fps = max(12, min(int(req.fps), 30))
+    steps = max(10, min(int(req.steps), 75))
+    guidance = max(1.0, min(float(req.guidance), 3.0))
+    with _gpu_lock:
+        _free_gpu()  # hand the whole L4 to the avatar model (one resident model at a time)
+        _run_model_cmd("LATENTSYNC_CMD" if is_video else "ECHOMIMIC_CMD",
+                       ref_path, audio_path, out_path, fps, res, steps=steps, guidance=guidance)
+    data = open(out_path, "rb").read()
+    return Response(content=data, media_type="video/mp4")
+
+
+class SyncScoreReq(BaseModel):
+    video_b64: str
+
+
+@app.post("/syncscore")
+def syncscore(req: SyncScoreReq, x_gen_token: str | None = Header(default=None)):
+    """Objective lip-sync quality for a rendered clip via LatentSync's own SyncNet — LSE-C
+    confidence (higher = tighter sync) + AV offset (near 0 = aligned). The metric for the
+    no-feedback quality loop. Needs syncnet_v2.model + sfd_face.pth under
+    {models}/latentsync/checkpoints/auxiliary (symlinked into the repo at build)."""
+    import re
+
+    _auth(x_gen_token)
+    if not req.video_b64:
+        raise HTTPException(status_code=422, detail="video_b64 required")
+    tmp = tempfile.mkdtemp(prefix="syncscore_")
+    vid = os.path.join(tmp, "in.mp4")
+    with open(vid, "wb") as f:
+        f.write(base64.b64decode(req.video_b64))
+    tmpl = os.environ.get("SYNCSCORE_CMD") or (
+        "cd /opt/latentsync-venv/repo && /opt/latentsync-venv/bin/python -m eval.eval_sync_conf "
+        "--video_path {video}"
+    )
+    cmd = tmpl.format(video=shlex.quote(vid), models=MODELS_DIR)
+    with _gpu_lock:
+        _free_gpu()
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=1200)
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    if proc.returncode != 0:
+        print(f"[gen] syncscore failed rc={proc.returncode}: {proc.stderr[-800:]}", flush=True)
+        raise HTTPException(status_code=500, detail="sync scoring failed")
+    conf = re.search(r"SyncNet confidence:\s*([0-9.]+)", out)
+    off = re.search(r"AV offset:\s*(-?[0-9]+)", out)
+    return {
+        "confidence": float(conf.group(1)) if conf else None,
+        "av_offset": int(off.group(1)) if off else None,
+    }
+
+
+def _read_image_rgb(path: str):
+    import numpy as _np
+    from PIL import Image
+
+    return _np.asarray(Image.open(path).convert("RGB"))

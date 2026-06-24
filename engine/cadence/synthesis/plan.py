@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 
 from cadence.config import SynthesisConfig
+from cadence.synthesis.lexicon import correct_words_out
 from cadence.models import (
     AssetKind,
     BrandBoard,
@@ -89,7 +90,9 @@ def group_captions(
     style: CaptionStyle,
     max_words: int = 4,
     max_dur: float = 2.2,
+    terms: list[str] | None = None,
 ) -> list[Caption]:
+    words_out = correct_words_out(words_out, custom_terms=terms)
     captions: list[Caption] = []
     chunk: list[tuple[str, float, float]] = []
 
@@ -115,9 +118,15 @@ def group_karaoke_captions(
     style: CaptionStyle = CaptionStyle.POP,
     max_words: int = 4,
     max_dur: float = 2.2,
+    terms: list[str] | None = None,
 ) -> list[Caption]:
     """Like :func:`group_captions`, but each line RETAINS its per-word timings (``Caption.words``)
-    so the renderer animates a per-word scale-pop ("karaoke") caption. Same chunking rules."""
+    so the renderer animates a per-word scale-pop ("karaoke") caption. Same chunking rules.
+
+    Brand/spell correction runs first (``correct_words_out``): ASR mishears like
+    "cloud hoock" become one canonical, correctly-timed "CloutHook" word so the screen
+    never shows a misspelled brand."""
+    words_out = correct_words_out(words_out, custom_terms=terms)
     captions: list[Caption] = []
     chunk: list[tuple[str, float, float]] = []
 
