@@ -13,6 +13,11 @@ scripts/
 **/frames-out/
 **/__pycache__/
 **/*.pyc
+.venv/
+**/.venv/
+venv/
+**/.pytest_cache/
+.pytest_cache/
 *.mp4
 *.webm
 *.b64

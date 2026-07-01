@@ -167,11 +167,17 @@ export default function AvatarStudio({ onClose, onCreated }: { onClose: () => vo
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 sm:items-center">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="avatar-studio-title"
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+    >
       <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[var(--background)] p-5 shadow-2xl">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold">Create a photoreal avatar</h2>
-          <button onClick={onClose} className="press text-white/50 hover:text-white" aria-label="close">×</button>
+          <h2 id="avatar-studio-title" className="text-base font-semibold">Create a photoreal avatar</h2>
+          <button onClick={onClose} className="press text-white/50 hover:text-white" aria-label="Close">×</button>
         </div>
 
         {created ? (
@@ -180,7 +186,7 @@ export default function AvatarStudio({ onClose, onCreated }: { onClose: () => vo
           <>
             {/* live preview */}
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black" style={{ aspectRatio: "9 / 16", maxHeight: 360 }}>
-              <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
+              <video ref={videoRef} muted playsInline aria-label="Live camera preview" className="h-full w-full object-cover" />
               {recording === "ref" && (
                 <div className="absolute inset-x-0 bottom-0 max-h-[45%] overflow-hidden bg-gradient-to-t from-black/85 to-transparent p-3 text-center text-sm text-white/90">
                   {TELEPROMPTER.map((l, i) => <p key={i} className="mb-1">{l}</p>)}
@@ -266,8 +272,8 @@ export default function AvatarStudio({ onClose, onCreated }: { onClose: () => vo
             {/* name + framing */}
             <div className="mt-3 flex gap-2">
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Avatar name"
-                className="input flex-1" />
-              <select value={framing} onChange={(e) => setFraming(e.target.value)} className="input">
+                aria-label="Avatar name" className="input flex-1" />
+              <select value={framing} onChange={(e) => setFraming(e.target.value)} aria-label="Avatar framing" className="input">
                 {FRAMINGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
@@ -323,7 +329,7 @@ function CreatedPanel({ created, framing, onClose }: { created: Created; framing
         ))}
       </div>
       <textarea value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="What's the video about? (or paste a full script)"
-        className="input mt-2 h-20 w-full" />
+        aria-label="Video topic or script" className="input mt-2 h-20 w-full" />
       {msg && <p className="mt-2 text-xs text-white/60">{msg}</p>}
       <p className="mt-2 text-[11px] text-white/45">
         💎 Costs <b className="text-white/70">8 tokens</b> · Creator plan · up to 20 avatar videos / month

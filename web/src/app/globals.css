@@ -104,6 +104,18 @@ body {
 .bg-white\/8 { background-color: rgba(255, 255, 255, 0.10); }
 ::placeholder { color: rgba(255, 255, 255, 0.45); }
 
+/* Shared form control (avatar studio, etc.) — AA contrast on the dark surface + visible focus. */
+.input {
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--foreground);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+.input::placeholder { color: rgba(255, 255, 255, 0.55); }
+.input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
@@ -185,6 +197,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .aurora, .animate-floaty, .animate-marquee, .animate-scrollscript, .animate-pulse-dot,
+  .animate-spin, .animate-pulse,
   .text-grad, .sheen, .hero-grad { animation: none !important; }
   .hero-grad { filter: drop-shadow(0 0 22px rgba(110, 123, 255, 0.4)); }
   .lift { transition: none; }

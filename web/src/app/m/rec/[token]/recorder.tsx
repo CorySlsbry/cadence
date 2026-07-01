@@ -113,7 +113,7 @@ export default function PhoneRecorder({ token }: { token: string }) {
   return (
     <main className="min-h-dvh bg-neutral-950 text-neutral-100 flex flex-col">
       <header className="px-5 pt-5 pb-2 text-center">
-        <div className="text-sm font-semibold tracking-tight text-violet-300">CloutHook · Record your avatar</div>
+        <h1 className="text-sm font-semibold tracking-tight text-[var(--accent)]">CloutHook · Record your avatar</h1>
       </header>
 
       {phase === "intro" && (
@@ -125,14 +125,14 @@ export default function PhoneRecorder({ token }: { token: string }) {
           <ul className="text-left text-sm text-neutral-400 space-y-2 max-w-xs">
             {TIPS.map((t) => (
               <li key={t} className="flex gap-2">
-                <span className="text-violet-400">•</span>
+                <span className="text-[var(--accent)]">•</span>
                 <span>{t}</span>
               </li>
             ))}
           </ul>
           <button
             onClick={startCamera}
-            className="mt-2 w-full max-w-xs rounded-full bg-violet-600 py-4 text-base font-semibold active:scale-[0.98] transition"
+            className="mt-2 w-full max-w-xs rounded-full bg-[var(--accent)] text-black py-4 text-base font-semibold active:scale-[0.98] transition"
           >
             Open camera
           </button>
@@ -196,7 +196,7 @@ export default function PhoneRecorder({ token }: { token: string }) {
             </button>
             <button
               onClick={upload}
-              className="rounded-full bg-violet-600 py-4 font-semibold active:scale-[0.98] transition"
+              className="rounded-full bg-[var(--accent)] text-black py-4 font-semibold active:scale-[0.98] transition"
             >
               Use this
             </button>
@@ -206,13 +206,13 @@ export default function PhoneRecorder({ token }: { token: string }) {
 
       {phase === "uploading" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
-          <div className="h-10 w-10 rounded-full border-2 border-violet-400 border-t-transparent animate-spin" />
-          <p className="text-neutral-300">Sending to your account…</p>
+          <div className="h-10 w-10 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" />
+          <p role="status" aria-live="polite" className="text-neutral-300">Sending to your account…</p>
         </div>
       )}
 
       {phase === "done" && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <div role="status" aria-live="polite" className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
           <div className="text-5xl">✓</div>
           <h1 className="text-xl font-semibold">Sent!</h1>
           <p className="text-neutral-400 max-w-xs">
@@ -222,7 +222,7 @@ export default function PhoneRecorder({ token }: { token: string }) {
       )}
 
       {phase === "error" && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <div role="alert" className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
           <div className="text-4xl">⚠️</div>
           <p className="text-neutral-300 max-w-xs">{err}</p>
           <button

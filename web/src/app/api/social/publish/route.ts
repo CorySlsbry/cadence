@@ -17,13 +17,38 @@ const Body = z.object({
   caption: z.string().max(280).default(""),
 });
 
-async function tiktokPublish(access: string, video: Buffer, caption: string): Promise<string> {
-  // Inbox (draft) upload — works pre-audit: the video lands in the creator's TikTok
-  // inbox where they tap to finish the post in-app. Direct Post needs TikTok's audit.
-  const initRes = await fetch("https://open.tiktokapis.com/v2/post/publish/inbox/video/init/", {
+async function tiktokPublish(access: string, video: Buffer, caption: string): Promise<{ url: string; note: string }> {
+  // Direct Post (video.publish): posts straight to the creator's profile — no manual tap in-app.
+  // An UNAUDITED app is capped to SELF_ONLY (private) until TikTok audits it; creator_info returns
+  // the privacy levels this app+creator may use, so we pick from those (SELF_ONLY pre-audit, and
+  // PUBLIC_TO_EVERYONE once audited). This auto-upgrades to public the moment approval lands.
+  const ciRes = await fetch("https://open.tiktokapis.com/v2/post/publish/creator_info/query/", {
+    method: "POST",
+    headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
+  });
+  const ci = await ciRes.json().catch(() => ({}));
+  if (!ciRes.ok) {
+    throw new Error(`TikTok creator info failed (${ciRes.status}): ${JSON.stringify(ci).slice(0, 200)}`);
+  }
+  const options: string[] = ci?.data?.privacy_level_options ?? [];
+  const privacy =
+    options.find((o) => o === "PUBLIC_TO_EVERYONE") ??
+    options.find((o) => o === "SELF_ONLY") ??
+    options[0];
+  if (!privacy) throw new Error("TikTok returned no available privacy level for this account");
+
+  const initRes = await fetch("https://open.tiktokapis.com/v2/post/publish/video/init/", {
     method: "POST",
     headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
     body: JSON.stringify({
+      post_info: {
+        title: caption.slice(0, 2200),
+        privacy_level: privacy,
+        disable_comment: false,
+        disable_duet: false,
+        disable_stitch: false,
+        video_cover_timestamp_ms: 1000,
+      },
       source_info: {
         source: "FILE_UPLOAD",
         video_size: video.length,
@@ -57,14 +82,18 @@ async function tiktokPublish(access: string, video: Buffer, caption: string): Pr
     });
     const sj = await st.json().catch(() => ({}));
     const status = sj?.data?.status;
-    if (status === "SEND_TO_USER_INBOX" || status === "PUBLISH_COMPLETE") break;
+    if (status === "PUBLISH_COMPLETE") break;
     if (status === "FAILED") {
       throw new Error(`TikTok rejected the video: ${sj?.data?.fail_reason ?? "unknown"}`);
     }
     if (Date.now() > deadline) throw new Error("TikTok processing timed out");
     await new Promise((res) => setTimeout(res, 4000));
   }
-  return "https://www.tiktok.com/tiktokstudio/content";
+  const note =
+    privacy === "PUBLIC_TO_EVERYONE"
+      ? "posted to your TikTok profile"
+      : "posted to your TikTok as private (SELF_ONLY) — public posting unlocks once TikTok audits the app";
+  return { url: "https://www.tiktok.com/tiktokstudio/content", note };
 }
 
 const LI_HEADERS = (access: string) => ({
@@ -382,12 +411,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, url });
     }
     if (platform === "tiktok") {
-      const url = await tiktokPublish(access, video, caption);
-      return NextResponse.json({
-        ok: true,
-        url,
-        note: "sent to your TikTok inbox — open the TikTok app to finish posting",
-      });
+      const { url, note } = await tiktokPublish(access, video, caption);
+      return NextResponse.json({ ok: true, url, note });
     }
     if (platform === "instagram") {
       if (!conn.platform_user_id) {

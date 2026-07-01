@@ -339,10 +339,14 @@ class Worker:
                 except Exception as exc:  # noqa: BLE001 - music is optional
                     print(f"[worker] music download failed ({exc}); no music bed", flush=True)
 
+            # Avatar jobs carry BOTH customization.avatar and customization.faceless, so resolve
+            # the avatar key first and EXCLUDE avatar jobs from the faceless branch — otherwise an
+            # avatar job matches faceless first, renders with NO lip-sync, and skips the billing gate.
+            av = (job.get("customization") or {}).get("avatar")
             # Faceless mode: the "recording" is narration audio (TTS or uploaded VO) —
             # no camera. AI scenes + karaoke captions become the entire visual track.
             fc = (job.get("customization") or {}).get("faceless")
-            if fc and not job.get("plan"):
+            if fc and not av and not job.get("plan"):
                 out_path = os.path.join(tmp, "final.mp4")
                 scene_style = str(fc.get("scene_style") or "") if isinstance(fc, dict) else ""
                 # 1400: an avatar character sheet (<=900) + user direction (<=400) + prefix.
@@ -375,8 +379,16 @@ class Worker:
             if av and not job.get("plan"):
                 # Authoritative billing AT THE GPU (the web route's checks are advisory and
                 # bypassable via a direct render_jobs insert): Creator-gate + monthly cap + the
-                # flat charge, BEFORE any render. Then suppress per-scene burn (no double-charge).
-                self._enforce_avatar_billing(user_id, job_id)
+                # flat charge, BEFORE any render. Charge ONCE — only on the first attempt; a
+                # self-heal retry was already gated + paid. Re-read attempts (the claimed row may
+                # omit the column) so a retry can never double-charge.
+                try:
+                    _a = self.supabase.table("render_jobs").select("attempts").eq("id", job_id).single().execute()
+                    _att = int((getattr(_a, "data", None) or {}).get("attempts") or 0)
+                except Exception:  # noqa: BLE001 - missing/unreadable -> treat as first attempt
+                    _att = 0
+                if _att == 0:
+                    self._enforce_avatar_billing(user_id, job_id)
                 self._prepaid = True
                 out_path = os.path.join(tmp, "final.mp4")
                 fc2 = (job.get("customization") or {}).get("faceless") or {}
@@ -1025,7 +1037,8 @@ class Worker:
         """Authoritative avatar gate AT THE GPU CHOKE POINT (the web route's checks are advisory
         and bypassable via a direct render_jobs insert): Creator-tier only, a flat per-video token
         charge, and a monthly cap — all BEFORE any lipsync. Raises (-> the run loop marks the job
-        'error' with the message) on any failure. concurrency=1 makes count + charge race-free."""
+        'error' with the message) on any failure. The per-user token balance is the hard backstop;
+        the monthly cap is best-effort (counts in-flight jobs but is not atomic across instances)."""
         AVATAR_TOKEN_COST = 8
         AVATAR_MONTHLY_CAP = 20
         if not user_id:
@@ -1045,7 +1058,8 @@ class Worker:
             self.supabase.table("render_jobs")
             .select("id", count="exact")
             .eq("user_id", user_id)
-            .eq("status", "done")
+            .neq("status", "error")
+            .neq("id", job_id)
             .gte("created_at", month_start)
             .filter("customization->avatar", "not.is", "null")
             .execute()

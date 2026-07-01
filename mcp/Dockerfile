@@ -10,4 +10,6 @@ COPY mcp/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
 COPY mcp/ ./
 # Cloud Run injects $PORT (default 8080).
-CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# MCP_APP selects which server runs: default the authenticated one; the public service sets
+# MCP_APP=public_server. Keeps the public deploy durable in config (not a one-off --command flag).
+CMD ["sh", "-c", "exec uvicorn ${MCP_APP:-server}:app --host 0.0.0.0 --port ${PORT:-8080}"]

@@ -799,20 +799,21 @@ export function FacelessClient() {
             </p>
           )}
 
-          <label className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2">
-            <span className="text-xs text-white/55">
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2">
+            <span id="autogen-label" className="text-xs text-white/55">
               <b className="text-white/80">Auto-generate</b> — start ~3s after your {mode === "topic" ? "topic" : "script"} is ready, no click
             </span>
             <button
               type="button"
               role="switch"
               aria-checked={autoGen}
+              aria-labelledby="autogen-label"
               onClick={() => setAutoGen((v) => { const nv = !v; try { localStorage.setItem("ch_autogen", nv ? "1" : "0"); } catch { /* ignore */ } return nv; })}
               className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${autoGen ? "bg-[var(--accent)]" : "bg-white/15"}`}
             >
               <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${autoGen ? "translate-x-[22px]" : "translate-x-0.5"}`} />
             </button>
-          </label>
+          </div>
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-white/45">
               ≈ {scenes} AI scenes · {sceneMode === "motion" ? scenes * 3 : scenes} tokens

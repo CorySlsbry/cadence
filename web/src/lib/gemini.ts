@@ -30,7 +30,8 @@ export async function geminiJson<T>(opts: GeminiOpts): Promise<T> {
   const parts: Record<string, unknown>[] = [];
   if (opts.imageUrl) {
     try {
-      const img = await fetch(opts.imageUrl);
+      if (new URL(opts.imageUrl).protocol !== "https:") throw new Error("non-https image url");
+      const img = await fetch(opts.imageUrl, { signal: AbortSignal.timeout(6000) });
       if (img.ok) {
         const buf = Buffer.from(await img.arrayBuffer());
         if (buf.length > 0 && buf.length < 4_000_000) {

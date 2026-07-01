@@ -180,5 +180,7 @@ Return STRICT JSON: {"title":"<=70 chars","body":"the script"}`,
   // (the GPU choke point) — a render_jobs row can be inserted directly via RLS, so the checks
   // above are advisory UX only. Do NOT charge here (the worker would then double-bill).
   await pokeWorker(); // start now instead of waiting for the every-minute drain tick
-  return NextResponse.json({ jobId: job.id, tokensCharged: AVATAR_TOKEN_COST });
+  // tokenCost is the QUOTED price; the authoritative debit happens in the worker (which can still
+  // reject), so we don't claim it was charged here.
+  return NextResponse.json({ jobId: job.id, tokenCost: AVATAR_TOKEN_COST });
 }

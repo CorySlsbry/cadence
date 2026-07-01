@@ -260,6 +260,7 @@ def tts(req: TtsReq, x_gen_token: str | None = Header(default=None)):
 # ============================================================================
 
 import shlex
+import shutil
 import subprocess
 
 _FACE_DET = {"engine": None, "lock": threading.Lock()}
@@ -303,6 +304,35 @@ def _has_face(rgb) -> bool:
     return len(faces) > 0
 
 
+def _sample_frames_rgb(video_path: str, n: int = 8):
+    """Up to n evenly-spaced frames (RGB). Multi-frame so the face gate doesn't reject a valid
+    clip just because frame 0 is a transition or the subject hasn't entered the frame yet."""
+    import cv2
+
+    cap = cv2.VideoCapture(video_path)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    frames = []
+    if total <= 1:
+        ok, frame = cap.read()
+        if ok:
+            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    else:
+        idxs = sorted({int(i * (total - 1) / max(1, n - 1)) for i in range(n)})
+        for idx in idxs:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ok, frame = cap.read()
+            if ok:
+                frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    cap.release()
+    if not frames:
+        raise HTTPException(status_code=422, detail="could not read the reference video")
+    return frames
+
+
+def _video_has_face(video_path: str) -> bool:
+    return any(_has_face(f) for f in _sample_frames_rgb(video_path))
+
+
 class LipsyncReq(BaseModel):
     audio_b64: str                       # driving narration (wav/mp3), already the user's voice
     video_b64: str | None = None         # real recording → LatentSync re-sync (preferred)
@@ -342,28 +372,32 @@ def lipsync(req: LipsyncReq, x_gen_token: str | None = Header(default=None)):
     is_video = bool(req.video_b64)
     ref_suffix = ".mp4" if is_video else ".png"
     tmp = tempfile.mkdtemp(prefix="lipsync_")
-    ref_path = os.path.join(tmp, f"ref{ref_suffix}")
-    audio_path = os.path.join(tmp, "audio.wav")
-    out_path = os.path.join(tmp, "out.mp4")
-    with open(ref_path, "wb") as f:
-        f.write(base64.b64decode(req.video_b64 or req.image_b64))
-    with open(audio_path, "wb") as f:
-        f.write(base64.b64decode(req.audio_b64))
+    try:
+        ref_path = os.path.join(tmp, f"ref{ref_suffix}")
+        audio_path = os.path.join(tmp, "audio.wav")
+        out_path = os.path.join(tmp, "out.mp4")
+        with open(ref_path, "wb") as f:
+            f.write(base64.b64decode(req.video_b64 or req.image_b64))
+        with open(audio_path, "wb") as f:
+            f.write(base64.b64decode(req.audio_b64))
 
-    # Abuse/quality gate: the reference MUST contain a real, detectable face.
-    rgb = _first_frame(ref_path) if is_video else _read_image_rgb(ref_path)
-    if not _has_face(rgb):
-        raise HTTPException(status_code=422, detail="no face detected in the reference")
+        # Abuse/quality gate: the reference MUST contain a real, detectable face. Sample several
+        # frames for video so a valid clip isn't rejected on a transition/empty first frame.
+        has_face = _video_has_face(ref_path) if is_video else _has_face(_read_image_rgb(ref_path))
+        if not has_face:
+            raise HTTPException(status_code=422, detail="no face detected in the reference")
 
-    res = max(256, min(int(req.res), 1080))
-    fps = max(12, min(int(req.fps), 30))
-    steps = max(10, min(int(req.steps), 75))
-    guidance = max(1.0, min(float(req.guidance), 3.0))
-    with _gpu_lock:
-        _free_gpu()  # hand the whole L4 to the avatar model (one resident model at a time)
-        _run_model_cmd("LATENTSYNC_CMD" if is_video else "ECHOMIMIC_CMD",
-                       ref_path, audio_path, out_path, fps, res, steps=steps, guidance=guidance)
-    data = open(out_path, "rb").read()
+        res = max(256, min(int(req.res), 1080))
+        fps = max(12, min(int(req.fps), 30))
+        steps = max(10, min(int(req.steps), 75))
+        guidance = max(1.0, min(float(req.guidance), 3.0))
+        with _gpu_lock:
+            _free_gpu()  # hand the whole L4 to the avatar model (one resident model at a time)
+            _run_model_cmd("LATENTSYNC_CMD" if is_video else "ECHOMIMIC_CMD",
+                           ref_path, audio_path, out_path, fps, res, steps=steps, guidance=guidance)
+        data = open(out_path, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     return Response(content=data, media_type="video/mp4")
 
 
@@ -383,27 +417,31 @@ def syncscore(req: SyncScoreReq, x_gen_token: str | None = Header(default=None))
     if not req.video_b64:
         raise HTTPException(status_code=422, detail="video_b64 required")
     tmp = tempfile.mkdtemp(prefix="syncscore_")
-    vid = os.path.join(tmp, "in.mp4")
-    with open(vid, "wb") as f:
-        f.write(base64.b64decode(req.video_b64))
-    tmpl = os.environ.get("SYNCSCORE_CMD") or (
-        "cd /opt/latentsync-venv/repo && /opt/latentsync-venv/bin/python -m eval.eval_sync_conf "
-        "--video_path {video}"
-    )
-    cmd = tmpl.format(video=shlex.quote(vid), models=MODELS_DIR)
-    with _gpu_lock:
-        _free_gpu()
-        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=1200)
-    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    if proc.returncode != 0:
-        print(f"[gen] syncscore failed rc={proc.returncode}: {proc.stderr[-800:]}", flush=True)
-        raise HTTPException(status_code=500, detail="sync scoring failed")
-    conf = re.search(r"SyncNet confidence:\s*([0-9.]+)", out)
-    off = re.search(r"AV offset:\s*(-?[0-9]+)", out)
-    return {
-        "confidence": float(conf.group(1)) if conf else None,
-        "av_offset": int(off.group(1)) if off else None,
-    }
+    try:
+        vid = os.path.join(tmp, "in.mp4")
+        with open(vid, "wb") as f:
+            f.write(base64.b64decode(req.video_b64))
+        tmpl = os.environ.get("SYNCSCORE_CMD") or (
+            "cd /opt/latentsync-venv/repo && /opt/latentsync-venv/bin/python -m eval.eval_sync_conf "
+            "--video_path {video}"
+        )
+        cmd = tmpl.format(video=shlex.quote(vid), models=MODELS_DIR)
+        with _gpu_lock:
+            _free_gpu()
+            proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=1200)
+        out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+        if proc.returncode != 0:
+            print(f"[gen] syncscore failed rc={proc.returncode}: {proc.stderr[-800:]}", flush=True)
+            raise HTTPException(status_code=500, detail="sync scoring failed")
+        conf = re.search(r"SyncNet confidence:\s*([0-9.]+)", out)
+        off = re.search(r"AV offset:\s*(-?[0-9]+)", out)
+        result = {
+            "confidence": float(conf.group(1)) if conf else None,
+            "av_offset": int(off.group(1)) if off else None,
+        }
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return result
 
 
 def _read_image_rgb(path: str):

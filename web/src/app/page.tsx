@@ -15,6 +15,7 @@ import { AuroraBg } from "@/components/aurora-bg";
 import { RevealOnScroll } from "@/components/reveal-on-scroll";
 import { HeroCommandBar } from "@/components/hero-command-bar";
 import { ShowcaseGallery } from "@/components/showcase-gallery";
+import { ScoreClient } from "@/app/score/score-client";
 
 const STEPS = [
   { n: "01", t: "Analyze a reference", d: "Drop in a TikTok-style clip. CloutHook maps its palette, exact cut timing, caption zones and pacing." },
@@ -39,6 +40,43 @@ const STATS = [
   { k: "1 take", v: "is all it takes" },
 ];
 
+const SITE = "https://clouthook.com";
+const HOME_SCHEMA = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${SITE}/#org`,
+      name: "CloutHook",
+      url: SITE,
+      description: "Premium AI short-form video studio.",
+      sameAs: ["https://neuron-hq.com"],
+      parentOrganization: {
+        "@type": "Organization",
+        name: "Neuron HQ",
+        url: "https://neuron-hq.com",
+        sameAs: ["https://neuron-hq.com"],
+      },
+    },
+    { "@type": "WebSite", "@id": `${SITE}/#site`, name: "CloutHook", url: SITE, publisher: { "@id": `${SITE}/#org` } },
+    {
+      "@type": "SoftwareApplication",
+      name: "CloutHook",
+      applicationCategory: "MultimediaApplication",
+      operatingSystem: "Web",
+      url: SITE,
+      publisher: { "@id": `${SITE}/#org` },
+      description:
+        "Record one raw take and CloutHook auto-edits a studio-grade 9:16 short — plus faceless videos and a photoreal AI avatar.",
+      offers: [
+        { "@type": "Offer", name: "Free", price: "0", priceCurrency: "USD" },
+        { "@type": "Offer", name: "Base", price: "30", priceCurrency: "USD" },
+        { "@type": "Offer", name: "Creator", price: "79", priceCurrency: "USD" },
+      ],
+    },
+  ],
+};
+
 export default async function Landing() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -48,6 +86,7 @@ export default async function Landing() {
 
   return (
     <div className="relative flex min-h-screen flex-col">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_SCHEMA) }} />
       <RefCapture />
       <AuroraBg />
       <RevealOnScroll />
@@ -64,6 +103,24 @@ export default async function Landing() {
               className="hidden min-h-11 items-center rounded-xl px-3 py-2 text-sm font-medium text-white/60 transition hover:text-white md:inline-flex"
             >
               How it works
+            </Link>
+            <Link
+              href="/pricing"
+              className="hidden min-h-11 items-center rounded-xl px-3 py-2 text-sm font-medium text-white/60 transition hover:text-white sm:inline-flex"
+            >
+              Pricing
+            </Link>
+            <Link
+              href="/blog"
+              className="hidden min-h-11 items-center rounded-xl px-3 py-2 text-sm font-medium text-white/60 transition hover:text-white sm:inline-flex"
+            >
+              Blog
+            </Link>
+            <Link
+              href="/score"
+              className="hidden min-h-11 items-center rounded-xl px-3 py-2 text-sm font-medium text-white/60 transition hover:text-white sm:inline-flex"
+            >
+              Free Score
             </Link>
             <Link
               href={user ? "/affiliate" : "/login?next=/affiliate"}
@@ -132,6 +189,13 @@ export default async function Landing() {
             <HeroCommandBar href={primaryHref} cta={primaryCta} />
           </div>
 
+          <p className="reveal mt-4 text-sm text-white/60">
+            Not ready to sign up?{" "}
+            <Link href="/score" className="font-medium text-[var(--accent)] hover:underline">
+              Score your last video free →
+            </Link>
+          </p>
+
           <div className="reveal mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-white/45">
             <span>No credit card to start</span>
             <span className="hidden h-1 w-1 rounded-full bg-white/25 sm:inline-block" />
@@ -150,6 +214,25 @@ export default async function Landing() {
             <span className="text-xs text-white/35">9:16 · ready to post</span>
           </div>
           <ShowcaseGallery />
+        </section>
+
+        {/* ---------- free viral score (interactive lead-magnet centerpiece) ---------- */}
+        <section id="score" className="mt-24 sm:mt-32">
+          <div className="reveal mx-auto mb-8 max-w-2xl text-center">
+            <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-1.5 text-xs font-medium text-[var(--accent)]">
+              Free · no signup to see your score
+            </p>
+            <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
+              Score your last video — <span className="brand-grad-text">free</span>
+            </h2>
+            <p className="mt-3 text-white/60">
+              Paste a TikTok, Reel, or Short and get an honest 0-10 Viral Score on your hook, pacing,
+              captions, visuals, format, and length — with the exact fixes for that video.
+            </p>
+          </div>
+          <div className="reveal mx-auto max-w-2xl">
+            <ScoreClient headingLevel="h3" />
+          </div>
         </section>
 
         {/* ---------- how it works ---------- */}
@@ -281,6 +364,11 @@ export default async function Landing() {
 
           <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-white/50">
             <Link href="#how" className="transition-colors hover:text-white/80">How it works</Link>
+            <a href="/pricing" className="transition-colors hover:text-white/80">Pricing</a>
+            <a href="/faq" className="transition-colors hover:text-white/80">FAQ</a>
+            <a href="/clouthook-vs-opusclip" className="transition-colors hover:text-white/80">vs OpusClip</a>
+            <a href="/blog" className="transition-colors hover:text-white/80">Blog</a>
+            <a href="/score" className="transition-colors hover:text-white/80">Free Viral Score</a>
             <Link href={user ? "/affiliate" : "/login?next=/affiliate"} className="transition-colors hover:text-white/80">Affiliates</Link>
             <Link href="/signup" className="transition-colors hover:text-white/80">Start free</Link>
             <a href="/privacy" className="transition-colors hover:text-white/80">Privacy Policy</a>
