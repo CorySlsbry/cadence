@@ -10,7 +10,16 @@ type Feedback = {
   message: string;
   page: string | null;
   status: string;
+  category: string | null;
   created_at: string;
+};
+
+// Category → emoji + label for the pill next to each feedback row.
+const CATEGORY_META: Record<string, { emoji: string; label: string }> = {
+  bug: { emoji: "🐛", label: "Bug" },
+  feature: { emoji: "💡", label: "Feature" },
+  question: { emoji: "❓", label: "Question" },
+  other: { emoji: "💬", label: "Other" },
 };
 
 export default async function AdminPage() {
@@ -27,7 +36,7 @@ export default async function AdminPage() {
   const admin = createAdminClient();
   const { data } = await admin
     .from("feedback")
-    .select("id, email, message, page, status, created_at")
+    .select("id, email, message, page, status, category, created_at")
     .order("created_at", { ascending: false })
     .limit(300);
   const items = (data ?? []) as Feedback[];
@@ -51,6 +60,14 @@ export default async function AdminPage() {
             <li key={f.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
               <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/45">
                 <span className="rounded-full bg-[var(--accent)]/20 px-2 py-0.5 text-[var(--accent)]">{f.status}</span>
+                {(() => {
+                  const meta = CATEGORY_META[f.category ?? "other"] ?? CATEGORY_META.other;
+                  return (
+                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-white/70">
+                      {meta.emoji} {meta.label}
+                    </span>
+                  );
+                })()}
                 <span>{f.email ?? "anonymous"}</span>
                 {f.page && <span className="text-white/30">· {f.page}</span>}
                 <span className="ml-auto">{new Date(f.created_at).toLocaleString()}</span>

@@ -5,9 +5,18 @@ import { usePathname } from "next/navigation";
 
 // Floating "Feedback" button shown on every signed-in page. Submissions go to the
 // admin dashboard (/admin). Sits above the studio's sticky action bar on mobile.
+type Category = "bug" | "feature" | "question";
+
+const CATEGORIES: { value: Category; label: string; emoji: string }[] = [
+  { value: "bug", label: "Bug", emoji: "🐛" },
+  { value: "feature", label: "Feature", emoji: "💡" },
+  { value: "question", label: "Question", emoji: "❓" },
+];
+
 export function FeedbackWidget() {
   const [open, setOpen] = useState(false);
   const [msg, setMsg] = useState("");
+  const [category, setCategory] = useState<Category>("question");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const pathname = usePathname();
@@ -19,7 +28,7 @@ export function FeedbackWidget() {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg, page: pathname }),
+        body: JSON.stringify({ message: msg, page: pathname, category }),
       });
       if (res.ok) {
         setSent(true);
@@ -70,6 +79,24 @@ export function FeedbackWidget() {
               <p className="py-6 text-center text-sm text-[var(--foreground)]">Thanks — got it! 🙌</p>
             ) : (
               <>
+                <div className="mb-3 flex gap-2" role="radiogroup" aria-label="Feedback type">
+                  {CATEGORIES.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={category === c.value}
+                      onClick={() => setCategory(c.value)}
+                      className={`flex flex-1 items-center justify-center gap-1 rounded-xl border px-2 py-2 text-xs font-medium transition ${
+                        category === c.value
+                          ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--foreground)]"
+                          : "border-white/12 bg-white/[0.04] text-white/60 hover:text-white"
+                      }`}
+                    >
+                      <span aria-hidden>{c.emoji}</span> {c.label}
+                    </button>
+                  ))}
+                </div>
                 <textarea
                   value={msg}
                   onChange={(e) => setMsg(e.target.value)}
