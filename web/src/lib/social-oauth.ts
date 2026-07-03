@@ -93,6 +93,15 @@ export const SOCIAL: Record<SocialPlatform, PlatformCfg> = {
       return { access: j.access_token as string, refresh: (j.refresh_token as string) ?? null,
                expiresIn: (j.expires_in as number) ?? null, scopes: (j.scope as string) ?? null };
     },
+    // Google access tokens live ~1h; the refresh token does NOT rotate, so keep the stored one.
+    refreshToken: async (refresh) => {
+      const j = await postForm("https://oauth2.googleapis.com/token", {
+        refresh_token: refresh, grant_type: "refresh_token",
+        client_id: env("CADENCE_YOUTUBE_CLIENT_ID"), client_secret: env("CADENCE_YOUTUBE_CLIENT_SECRET"),
+      });
+      return { access: j.access_token as string, refresh: (j.refresh_token as string) ?? refresh,
+               expiresIn: (j.expires_in as number) ?? null, scopes: (j.scope as string) ?? null };
+    },
     userInfo: async (access) => {
       const r = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
         { headers: { authorization: `Bearer ${access}` } });
@@ -124,6 +133,16 @@ export const SOCIAL: Record<SocialPlatform, PlatformCfg> = {
         code, grant_type: "authorization_code", redirect_uri: redirectUri("tiktok"), code_verifier: verifier,
       });
       return { access: j.access_token as string, refresh: (j.refresh_token as string) ?? null,
+               expiresIn: (j.expires_in as number) ?? null, scopes: (j.scope as string) ?? null };
+    },
+    // TikTok access tokens live ~24h; the refresh token (~365d) DOES rotate — the publish
+    // route persists the returned `refresh`, so fall back to the old one only if absent.
+    refreshToken: async (refresh) => {
+      const j = await postForm("https://open.tiktokapis.com/v2/oauth/token/", {
+        client_key: env("CADENCE_TIKTOK_CLIENT_KEY"), client_secret: env("CADENCE_TIKTOK_CLIENT_SECRET"),
+        grant_type: "refresh_token", refresh_token: refresh,
+      });
+      return { access: j.access_token as string, refresh: (j.refresh_token as string) ?? refresh,
                expiresIn: (j.expires_in as number) ?? null, scopes: (j.scope as string) ?? null };
     },
     userInfo: async (access) => {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { SOCIAL, isSocialPlatform, pkcePair, randomState, signState } from "@/lib/social-oauth";
+import { publicOrigin } from "@/lib/request-origin";
 
 // Kick off a platform OAuth connect: stash an HMAC-signed state cookie (CSRF + user_id + PKCE
 // verifier) and redirect the user to the platform's consent screen.
@@ -13,9 +14,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ plat
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.redirect(new URL("/login", request.url));
+  const origin = publicOrigin(request);
+  if (!user) return NextResponse.redirect(new URL("/login", origin));
   if (!cfg.configured()) {
-    return NextResponse.redirect(new URL(`/connections?social=${platform}&status=unconfigured`, request.url));
+    return NextResponse.redirect(new URL(`/connections?social=${platform}&status=unconfigured`, origin));
   }
 
   const state = randomState();

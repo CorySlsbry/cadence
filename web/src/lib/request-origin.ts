@@ -9,6 +9,10 @@ export function publicOrigin(request: Request): string {
   if (env) return env.replace(/\/$/, "");
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   const proto = request.headers.get("x-forwarded-proto") ?? "https";
-  if (host && !/^(0\.0\.0\.0|localhost|127\.)/.test(host)) return `${proto}://${host}`;
-  return new URL(request.url).origin;
+  // A real forwarded client host (incl. localhost for dev) is trustworthy; the
+  // container's internal 0.0.0.0 listen address is not.
+  if (host && !/^0\.0\.0\.0/.test(host)) return `${proto}://${host}`;
+  // Last resort: the canonical public site — NEVER the raw request origin, which on
+  // Cloud Run is https://0.0.0.0:8080 (ERR_ADDRESS_INVALID for users, and off-brand).
+  return "https://clouthook.com";
 }

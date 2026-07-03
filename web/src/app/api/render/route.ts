@@ -25,6 +25,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid request body" }, { status: 422 });
   }
 
+  // Tenant isolation (IDOR guard): the worker downloads these keys with the service role,
+  // which BYPASSES storage RLS — so the paths MUST live in the caller's own folder. Without
+  // this, an attacker could point recordingPath at another user's private upload.
+  const ownsPath = (p: string | null | undefined) => !p || p.startsWith(`${user.id}/`);
+  if (!ownsPath(body.recordingPath) || !ownsPath(body.referencePath)) {
+    return NextResponse.json({ error: "storage path is outside your workspace" }, { status: 422 });
+  }
+
   // Per-user token meter (1 token = 1 AI scene) — the real multi-tenant gate. Never
   // trust the client; the worker also burns tokens atomically per image. BYOK users
   // keep their tokens (the worker skips metering for them), so they pass this freely.

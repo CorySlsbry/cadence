@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createCheckoutSessionFor, createPackCheckoutSessionFor } from "@/lib/checkout";
+import { publicOrigin } from "@/lib/request-origin";
 
 // Either a subscription plan or a one-time token pack.
 const Body = z.union([
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid plan" }, { status: 422 });
   }
 
-  const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
+  const origin = publicOrigin(request);
   try {
     const url =
       "plan" in body

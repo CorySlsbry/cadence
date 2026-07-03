@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createCheckoutSessionFor } from "@/lib/checkout";
+import { publicOrigin } from "@/lib/request-origin";
 
 /**
  * The signup→pay bridge. /signup?plan=X funnels here after auth; we claim any
@@ -11,7 +12,7 @@ import { createCheckoutSessionFor } from "@/lib/checkout";
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const origin = process.env.NEXT_PUBLIC_SITE_URL || url.origin;
+  const origin = publicOrigin(request);
   const plan = url.searchParams.get("plan");
   if (plan !== "base" && plan !== "creator") {
     return NextResponse.redirect(`${origin}/premium`);

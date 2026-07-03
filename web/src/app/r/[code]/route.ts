@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { publicOrigin } from "@/lib/request-origin";
 
 /**
  * Pretty affiliate link: clouthook.com/r/CODE
@@ -19,7 +20,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ code: strin
     }
   }
 
-  const res = NextResponse.redirect(new URL(`/?ref=${encodeURIComponent(clean)}`, request.url), 302);
+  const res = NextResponse.redirect(new URL(`/?ref=${encodeURIComponent(clean)}`, publicOrigin(request)), 302);
   res.cookies.set("ch_ref", clean, {
     maxAge: 60 * 60 * 24 * 90, // 90-day referral window
     path: "/",

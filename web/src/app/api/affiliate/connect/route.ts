@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripe } from "@/lib/stripe";
+import { publicOrigin } from "@/lib/request-origin";
 
 /**
  * Stripe Connect Express onboarding for affiliate payouts.
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   if (!aff) return NextResponse.json({ error: "Join the affiliate program first." }, { status: 400 });
 
   const stripe = getStripe();
-  const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
+  const origin = publicOrigin(request);
 
   try {
     let accountId = aff.stripe_account_id as string | null;
