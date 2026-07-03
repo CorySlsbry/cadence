@@ -1,8 +1,20 @@
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
 // Next.js 16: "Middleware" is now "Proxy" (proxy.ts, exporting `proxy`).
 export async function proxy(request: NextRequest) {
+  // Canonical host. The Cloud Run default domain (*.run.app) serves the whole site, and any page
+  // loaded there bakes that origin into Supabase auth emails + OAuth redirectTo via
+  // window.location.origin. 308 it to clouthook.com so the public origin is always canonical
+  // (leaves clouthook.com and localhost dev untouched; container health probes don't carry a
+  // *.run.app Host header, so they're unaffected).
+  const host = request.headers.get("host") ?? "";
+  if (host.endsWith(".run.app")) {
+    return NextResponse.redirect(
+      new URL(request.nextUrl.pathname + request.nextUrl.search, "https://clouthook.com"),
+      308,
+    );
+  }
   return await updateSession(request);
 }
 

@@ -8,7 +8,7 @@ until its `CADENCE_<PLATFORM>_*` secrets are mounted on `cadence-web`.
 For every platform the **redirect/callback URI** is:
 
 ```
-https://cadence-web-840472456279.us-west1.run.app/api/social/oauth/<platform>/callback
+https://clouthook.com/api/social/oauth/<platform>/callback
 ```
 
 (`<platform>` = `youtube` | `tiktok` | `instagram`). Register that EXACT URI on the platform.
