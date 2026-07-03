@@ -2,8 +2,19 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripe, epochToIso } from "@/lib/stripe";
+import { notifySlack } from "@/lib/notify-slack";
 
 type Admin = ReturnType<typeof createAdminClient>;
+type PgResult = { error: { message: string; code?: string } | null };
+
+// supabase-js resolves { data, error } and NEVER throws — so an unchecked DB failure would be
+// silently ignored and this webhook would 200, telling Stripe "handled" when it wasn't (Stripe
+// then never retries and the paid user is left without their plan/tokens). Wrap every mutation
+// so a real error propagates to the outer catch → 500 → Stripe retries.
+function ok<T extends PgResult>(res: T, ctx: string): T {
+  if (res.error) throw new Error(`${ctx}: ${res.error.message}`);
+  return res;
+}
 
 // Stripe moved current_period_* across API versions; read them defensively.
 function periodBounds(sub: Stripe.Subscription): { start: string | null; end: string | null } {
@@ -14,10 +25,10 @@ function periodBounds(sub: Stripe.Subscription): { start: string | null; end: st
 /**
  * Stripe webhook. Verifies the signature, then keeps our DB in sync:
  *  - checkout.session.completed  -> upsert an active subscription, set the user's plan + grant tokens
- *  - customer.subscription.updated/deleted -> sync status (canceled flips commissions off automatically,
- *    since affiliate_dashboard() sums ACTIVE subs only) + downgrade to free on final cancel
+ *  - customer.subscription.updated/deleted -> sync status + downgrade to free on any terminal status
  *  - invoice.paid -> accrue the affiliate's commission once per invoice (idempotent)
- * Returns 500 on handler errors so Stripe retries.
+ *  - checkout.session.expired -> Slack ping (abandoned checkout — Stripe already has their email)
+ * EVERY DB write is error-checked; a handler error returns 500 so Stripe retries.
  */
 export async function POST(request: Request) {
   const sig = request.headers.get("stripe-signature");
@@ -40,6 +51,9 @@ export async function POST(request: Request) {
     switch (event.type) {
       case "checkout.session.completed":
         await activateFromSession(admin, stripe, event.data.object as Stripe.Checkout.Session);
+        break;
+      case "checkout.session.expired":
+        await onCheckoutExpired(event.data.object as Stripe.Checkout.Session);
         break;
       case "customer.subscription.updated":
       case "customer.subscription.deleted":
@@ -88,33 +102,65 @@ async function activateFromSession(admin: Admin, stripe: Stripe, s: Stripe.Check
     ({ start, end } = periodBounds(sub));
   }
 
-  await admin.from("subscriptions").upsert(
-    {
-      user_id: userId,
-      plan,
-      status: "active",
-      amount_usd: planRow?.price_usd ?? null,
-      affiliate_id: affiliateId,
-      stripe_subscription_id: subId,
-      stripe_customer_id: custId,
-      current_period_start: start,
-      current_period_end: end,
-      started_at: new Date().toISOString(),
-      canceled_at: null,
-    },
-    { onConflict: "stripe_subscription_id" },
+  ok(
+    await admin.from("subscriptions").upsert(
+      {
+        user_id: userId,
+        plan,
+        status: "active",
+        amount_usd: planRow?.price_usd ?? null,
+        affiliate_id: affiliateId,
+        stripe_subscription_id: subId,
+        stripe_customer_id: custId,
+        current_period_start: start,
+        current_period_end: end,
+        started_at: new Date().toISOString(),
+        canceled_at: null,
+      },
+      { onConflict: "stripe_subscription_id" },
+    ),
+    "subscriptions.upsert",
   );
 
-  // Set plan + grant the plan's monthly tokens immediately; claim_monthly_tokens handles
-  // subsequent calendar-month refreshes on page load.
-  await admin
-    .from("profiles")
-    .update({
-      plan,
-      tokens: planRow?.monthly_tokens ?? 25,
-      token_period_start: new Date().toISOString(),
-    })
-    .eq("id", userId);
+  // Set the plan (+ period anchor) — but NEVER absolutely overwrite `tokens`: that would wipe
+  // purchased token-pack balances and re-grant on a duplicate webhook delivery. Grant the plan's
+  // monthly tokens ADDITIVELY and exactly once, using token_topups.stripe_session_id (UNIQUE) as
+  // the idempotency guard — the same mechanism the pack path uses.
+  ok(
+    await admin
+      .from("profiles")
+      .update({ plan, token_period_start: new Date().toISOString() })
+      .eq("id", userId),
+    "profiles.update(plan)",
+  );
+
+  const monthly = Number(planRow?.monthly_tokens ?? 0);
+  if (monthly > 0 && s.id) {
+    const ins = await admin.from("token_topups").insert({
+      user_id: userId,
+      pack_key: `plan:${plan}`, // marks this as the subscription's initial grant, not a pack sale
+      tokens: monthly,
+      amount_usd: null, // keep it out of pack-revenue sums
+      affiliate_id: affiliateId,
+      stripe_session_id: s.id,
+    });
+    if (ins.error) {
+      if (ins.error.code !== "23505") throw new Error(`token_topups.insert(plan): ${ins.error.message}`);
+      // 23505 = this checkout session already granted (Stripe retry) → don't grant again
+    } else {
+      ok(
+        await admin.rpc("grant_extra_tokens", { p_user: userId, p_tokens: monthly, p_reason: `plan:${plan}` }),
+        "grant_extra_tokens(plan)",
+      );
+    }
+  }
+
+  await notifySlack({
+    kind: "purchase",
+    title: `New subscription — ${plan}`,
+    email: s.customer_details?.email ?? undefined,
+    body: planRow?.price_usd ? `$${planRow.price_usd}/mo` : undefined,
+  });
 }
 
 /** Token pack paid → grant tokens exactly once (unique session id absorbs Stripe retries)
@@ -125,8 +171,8 @@ async function grantPackPurchase(admin: Admin, s: Stripe.Checkout.Session) {
   const packKey = s.metadata?.pack ?? "";
   if (!userId || !tokens || !s.id) return;
 
-  const amountUsd = Math.round((s.amount_total ?? 0)) / 100;
-  const { error: insErr } = await admin.from("token_topups").insert({
+  const amountUsd = Math.round(s.amount_total ?? 0) / 100;
+  const ins = await admin.from("token_topups").insert({
     user_id: userId,
     pack_key: packKey,
     tokens,
@@ -134,13 +180,21 @@ async function grantPackPurchase(admin: Admin, s: Stripe.Checkout.Session) {
     affiliate_id: s.metadata?.affiliate_id || null,
     stripe_session_id: s.id,
   });
-  if (insErr) return; // duplicate session id = already granted (retry) → do nothing
+  if (ins.error) {
+    // ONLY a duplicate session id means "already granted"; any other error must retry (throw),
+    // otherwise a transient failure would permanently eat the customer's paid token pack.
+    if (ins.error.code === "23505") return;
+    throw new Error(`token_topups.insert: ${ins.error.message}`);
+  }
 
-  await admin.rpc("grant_extra_tokens", {
-    p_user: userId,
-    p_tokens: tokens,
-    p_reason: `topup:${packKey}`,
-  });
+  ok(
+    await admin.rpc("grant_extra_tokens", {
+      p_user: userId,
+      p_tokens: tokens,
+      p_reason: `topup:${packKey}`,
+    }),
+    "grant_extra_tokens(pack)",
+  );
 
   const affiliateId = s.metadata?.affiliate_id || null;
   if (affiliateId && amountUsd > 0) {
@@ -150,7 +204,7 @@ async function grantPackPurchase(admin: Admin, s: Stripe.Checkout.Session) {
       .eq("id", affiliateId)
       .maybeSingle();
     const rate = Number(aff?.commission_rate ?? 0.3);
-    await admin.from("commissions").insert({
+    const commission = {
       affiliate_id: affiliateId,
       subscription_id: null,
       referred_user_id: userId,
@@ -158,8 +212,31 @@ async function grantPackPurchase(admin: Admin, s: Stripe.Checkout.Session) {
       rate,
       status: "pending",
       stripe_invoice_id: s.id, // unique idx → idempotent for pack sessions too
-    });
+    };
+    const cins = await admin.from("commissions").insert(commission);
+    // A duplicate commission (retry) is fine; any other error should retry.
+    if (cins.error && cins.error.code !== "23505") {
+      throw new Error(`commissions.insert(pack): ${cins.error.message}`);
+    }
   }
+
+  await notifySlack({
+    kind: "purchase",
+    title: `Token pack — ${packKey}`,
+    email: s.customer_details?.email ?? undefined,
+    body: amountUsd > 0 ? `$${amountUsd} · ${tokens} tokens` : undefined,
+  });
+}
+
+async function onCheckoutExpired(s: Stripe.Checkout.Session) {
+  // Stripe already collected the email on the Checkout page — highest-intent lead capture.
+  const what = s.metadata?.plan ? `plan ${s.metadata.plan}` : s.metadata?.pack ? `pack ${s.metadata.pack}` : "checkout";
+  await notifySlack({
+    kind: "abandoned_checkout",
+    title: "Abandoned checkout",
+    email: s.customer_details?.email ?? undefined,
+    body: what,
+  });
 }
 
 async function syncSubscription(admin: Admin, sub: Stripe.Subscription) {
@@ -171,34 +248,35 @@ async function syncSubscription(admin: Admin, sub: Stripe.Subscription) {
         : "canceled";
 
   const { start, end } = periodBounds(sub);
-  await admin
-    .from("subscriptions")
-    .update({
-      status,
-      current_period_start: start,
-      current_period_end: end,
-      canceled_at: status === "canceled" ? new Date().toISOString() : null,
-    })
-    .eq("stripe_subscription_id", sub.id);
+  ok(
+    await admin
+      .from("subscriptions")
+      .update({
+        status,
+        current_period_start: start,
+        current_period_end: end,
+        canceled_at: status === "canceled" ? new Date().toISOString() : null,
+      })
+      .eq("stripe_subscription_id", sub.id),
+    "subscriptions.update",
+  );
 
-  // Final cancellation -> downgrade the profile to free. (Commission already drops the
-  // instant status != 'active' because affiliate_dashboard() sums active subs only.)
-  if (sub.status === "canceled") {
+  // Downgrade the profile to free on ANY terminal status (canceled / unpaid / paused /
+  // incomplete_expired — all map to local 'canceled'), not just Stripe's exact 'canceled'.
+  // NEVER overwrite `tokens` here: a canceling user keeps whatever balance they have (they
+  // paid through the period, and clobbering would destroy purchased pack tokens). Their monthly
+  // refresh simply follows the free plan from here on.
+  if (status === "canceled") {
     const { data: row } = await admin
       .from("subscriptions")
       .select("user_id")
       .eq("stripe_subscription_id", sub.id)
       .maybeSingle();
     if (row?.user_id) {
-      const { data: free } = await admin
-        .from("plans")
-        .select("monthly_tokens")
-        .eq("key", "free")
-        .single();
-      await admin
-        .from("profiles")
-        .update({ plan: "free", tokens: free?.monthly_tokens ?? 25 })
-        .eq("id", row.user_id);
+      ok(
+        await admin.from("profiles").update({ plan: "free" }).eq("id", row.user_id),
+        "profiles.update(downgrade)",
+      );
     }
   }
 }
@@ -231,7 +309,7 @@ async function accrueCommission(admin: Admin, inv: Stripe.Invoice) {
   const rate = Number(aff?.commission_rate ?? 0.3);
   const amount = Math.round(((inv.amount_paid ?? 0) / 100) * rate * 100) / 100;
 
-  await admin.from("commissions").insert({
+  const cins = await admin.from("commissions").insert({
     affiliate_id: subRow.affiliate_id,
     subscription_id: subRow.id,
     referred_user_id: subRow.user_id,
@@ -242,6 +320,9 @@ async function accrueCommission(admin: Admin, inv: Stripe.Invoice) {
     status: "pending",
     stripe_invoice_id: inv.id,
   });
+  if (cins.error && cins.error.code !== "23505") {
+    throw new Error(`commissions.insert: ${cins.error.message}`);
+  }
 }
 
 /** A refunded charge claws back its commission — unless it was already paid out
@@ -250,9 +331,12 @@ async function reverseCommission(admin: Admin, charge: Stripe.Charge) {
   const invField = (charge as unknown as { invoice?: string | { id: string } }).invoice;
   const invId = typeof invField === "string" ? invField : invField?.id ?? null;
   if (!invId) return;
-  await admin
-    .from("commissions")
-    .update({ status: "reversed" })
-    .eq("stripe_invoice_id", invId)
-    .in("status", ["pending", "approved"]);
+  ok(
+    await admin
+      .from("commissions")
+      .update({ status: "reversed" })
+      .eq("stripe_invoice_id", invId)
+      .in("status", ["pending", "approved"]),
+    "commissions.update(reverse)",
+  );
 }
