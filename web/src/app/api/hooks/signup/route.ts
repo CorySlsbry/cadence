@@ -5,6 +5,8 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { notifySlack } from "@/lib/notify-slack";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendFunnelEmail } from "@/lib/email";
 
 function secretMatches(provided: string | null): boolean {
   const expected = process.env.SIGNUP_HOOK_SECRET;
@@ -35,5 +37,16 @@ export async function POST(req: Request) {
     title: rec.full_name ? `New signup — ${rec.full_name}` : "New signup",
     email: rec.email,
   });
+
+  // Welcome email — insert-first so email_log's unique(user_id, template) makes it exactly-once
+  // even if the DB webhook re-delivers. No-ops silently if the mail relay isn't configured.
+  if (rec.email && rec.id) {
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("email_log")
+      .insert({ user_id: rec.id, email: rec.email, template: "welcome" });
+    if (!error) await sendFunnelEmail(rec.email, "welcome", rec.full_name);
+  }
+
   return NextResponse.json({ ok: true });
 }

@@ -3,8 +3,23 @@ import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripe, epochToIso } from "@/lib/stripe";
 import { notifySlack } from "@/lib/notify-slack";
+import { sendFunnelEmail, type FunnelTemplate } from "@/lib/email";
 
 type Admin = ReturnType<typeof createAdminClient>;
+
+/** Send a lifecycle email at most once per (user, template) — email_log's unique constraint is the
+ *  idempotency guard. Fetches the user's email from profiles when not supplied. No-ops if the mail
+ *  relay isn't configured. */
+async function sendLifecycleOnce(admin: Admin, userId: string, tpl: FunnelTemplate, emailHint?: string) {
+  let email = emailHint;
+  if (!email) {
+    const { data } = await admin.from("profiles").select("email").eq("id", userId).maybeSingle();
+    email = (data?.email as string | undefined) ?? undefined;
+  }
+  if (!email) return;
+  const { error } = await admin.from("email_log").insert({ user_id: userId, email, template: tpl });
+  if (!error) await sendFunnelEmail(email, tpl);
+}
 type PgResult = { error: { message: string; code?: string } | null };
 
 // supabase-js resolves { data, error } and NEVER throws — so an unchecked DB failure would be
@@ -53,7 +68,7 @@ export async function POST(request: Request) {
         await activateFromSession(admin, stripe, event.data.object as Stripe.Checkout.Session);
         break;
       case "checkout.session.expired":
-        await onCheckoutExpired(event.data.object as Stripe.Checkout.Session);
+        await onCheckoutExpired(admin, event.data.object as Stripe.Checkout.Session);
         break;
       case "customer.subscription.updated":
       case "customer.subscription.deleted":
@@ -228,15 +243,13 @@ async function grantPackPurchase(admin: Admin, s: Stripe.Checkout.Session) {
   });
 }
 
-async function onCheckoutExpired(s: Stripe.Checkout.Session) {
+async function onCheckoutExpired(admin: Admin, s: Stripe.Checkout.Session) {
   // Stripe already collected the email on the Checkout page — highest-intent lead capture.
+  const email = s.customer_details?.email ?? undefined;
+  const userId = s.metadata?.user_id || s.client_reference_id || undefined;
   const what = s.metadata?.plan ? `plan ${s.metadata.plan}` : s.metadata?.pack ? `pack ${s.metadata.pack}` : "checkout";
-  await notifySlack({
-    kind: "abandoned_checkout",
-    title: "Abandoned checkout",
-    email: s.customer_details?.email ?? undefined,
-    body: what,
-  });
+  await notifySlack({ kind: "abandoned_checkout", title: "Abandoned checkout", email, body: what });
+  if (userId) await sendLifecycleOnce(admin, userId, "abandoned_checkout", email);
 }
 
 async function syncSubscription(admin: Admin, sub: Stripe.Subscription) {
@@ -277,6 +290,7 @@ async function syncSubscription(admin: Admin, sub: Stripe.Subscription) {
         await admin.from("profiles").update({ plan: "free" }).eq("id", row.user_id),
         "profiles.update(downgrade)",
       );
+      await sendLifecycleOnce(admin, row.user_id, "winback");
     }
   }
 }
