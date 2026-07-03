@@ -77,8 +77,18 @@ def start_render(recording_path: str, project_id: str | None = None,
     "broll_quality": "fast|standard|ultra"}. Counts against your monthly render quota. Returns
     the queued job (poll get_status for progress)."""
     uid = _uid()
+    # Tenant isolation (IDOR guard): the worker downloads recording_path with the service role,
+    # bypassing storage RLS — so it MUST live in the caller's own folder, never another user's key.
+    if not recording_path or not recording_path.startswith(f"{uid}/"):
+        return {"error": "recording_path must be one of your own uploads (see list_recordings)"}
+    # The same gates the web /api/render route enforces (the MCP tool previously bypassed all of
+    # them, letting a 0-token user burn Cloud Run compute + whisper + ffmpeg for free).
+    if db.tokens_remaining(uid) <= 0:
+        return {"error": "You're out of tokens. Top up or upgrade on the Pricing page."}
+    if db.active_render_count(uid) >= 2:
+        return {"error": "You already have 2 renders in progress — let one finish first."}
     used, limit = db.renders_used(uid), db.monthly_limit(uid)
-    if limit and used >= limit:
+    if used >= limit:
         return {"error": f"monthly render limit reached ({used}/{limit})"}
     return db.start_render(uid, recording_path, project_id, customization)
 

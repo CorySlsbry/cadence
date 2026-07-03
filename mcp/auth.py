@@ -11,6 +11,7 @@ downstream (confused-deputy safe) — tools use the service-role key scoped to `
 from __future__ import annotations
 
 import hashlib
+import html
 import os
 import secrets
 import time
@@ -181,7 +182,11 @@ class CadenceOAuth(OAuthProvider):
 
 
 def _login_page(txn: str, error: str = "") -> HTMLResponse:
-    err = f'<p style="color:#f87171;font-size:13px">{error}</p>' if error else ""
+    # Escape everything interpolated into this credential-entry page. txn should already be a
+    # validated JWT (no HTML metacharacters), but escaping is the defense that guarantees no
+    # reflected-XSS breakout even if a raw value ever reaches here.
+    txn = html.escape(txn, quote=True)
+    err = f'<p style="color:#f87171;font-size:13px">{html.escape(error)}</p>' if error else ""
     return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>Connect Cadence to Claude</title>
 <style>body{{font-family:system-ui;background:#0a0a0a;color:#fff;display:grid;place-items:center;height:100vh;margin:0}}
@@ -201,7 +206,16 @@ async def login_route(request: Request):
     """GET renders the Cadence login; POST verifies it against Supabase Auth and issues the
     authorization code, then redirects back to the OAuth client (Claude)."""
     if request.method == "GET":
-        return _login_page(request.query_params.get("txn", ""))
+        # Validate the signed txn BEFORE rendering — never reflect an unverified query param onto
+        # the credential page. An invalid/tampered/expired txn gets a static error, not the form.
+        txn_raw = request.query_params.get("txn", "")
+        try:
+            jwt.decode(txn_raw, JWT_SECRET, algorithms=["HS256"])
+        except Exception:  # noqa: BLE001
+            return HTMLResponse(
+                "Authorization request expired — restart the connection from Claude.", status_code=400
+            )
+        return _login_page(txn_raw)
 
     form = await request.form()
     txn_raw = str(form.get("txn", ""))

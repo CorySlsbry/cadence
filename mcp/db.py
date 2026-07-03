@@ -135,7 +135,23 @@ def renders_used(user_id: str) -> int:
 
 def monthly_limit(user_id: str) -> int:
     r = admin().table("profiles").select("monthly_render_limit").eq("id", user_id).limit(1).execute()
-    return int((r.data[0]["monthly_render_limit"] if r.data else 0) or 0)
+    val = r.data[0]["monthly_render_limit"] if r.data else None
+    # NEVER return 0/None — a missing limit must fall back to the plan default, not "unlimited".
+    return int(val) if val else 10
+
+
+def tokens_remaining(user_id: str) -> int:
+    """The user's spendable token balance (the real per-user gate; the worker also meters per
+    AI scene). BYOK users keep a balance and pass freely, same as the web route."""
+    r = admin().table("profiles").select("tokens").eq("id", user_id).limit(1).execute()
+    return int((r.data[0]["tokens"] if r.data else 0) or 0)
+
+
+def active_render_count(user_id: str) -> int:
+    """In-flight renders (anything not yet 'done'/'error') — used to cap concurrent jobs."""
+    r = (admin().table("render_jobs").select("id", count="exact")
+         .eq("user_id", user_id).filter("status", "not.in", "(done,error)").execute())
+    return int(r.count or 0)
 
 
 def signed_output_url(output_path: str, expires: int = 3600) -> str | None:
