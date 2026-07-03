@@ -1,4 +1,5 @@
 import type { User } from "@supabase/supabase-js";
+import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripe } from "@/lib/stripe";
 import { ensurePlanPrice, ensurePackPrice, type PlanRow, type PackRow } from "@/lib/pricing";
@@ -15,7 +16,8 @@ export async function createCheckoutSessionFor(
   user: User,
   plan: "base" | "creator",
   origin: string,
-): Promise<string> {
+  embedded = false,
+): Promise<Stripe.Checkout.Session> {
   const admin = createAdminClient();
 
   const { data: planRow } = await admin
@@ -47,19 +49,20 @@ export async function createCheckoutSessionFor(
   }
 
   const meta = { user_id: user.id, plan, affiliate_id: affiliateId };
-  const session = await stripe.checkout.sessions.create({
+  return stripe.checkout.sessions.create({
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: user.email ?? undefined,
     client_reference_id: user.id,
-    success_url: `${origin}/dashboard?upgraded=1`,
-    cancel_url: `${origin}/premium?canceled=1`,
     metadata: meta,
     subscription_data: { metadata: meta },
     allow_promotion_codes: true,
+    // Embedded (ui_mode) renders the payment form inline on clouthook.com and returns to
+    // /checkout/return; hosted keeps the classic success/cancel redirect (the fallback).
+    ...(embedded
+      ? { ui_mode: "embedded_page", return_url: `${origin}/checkout/return?session_id={CHECKOUT_SESSION_ID}` }
+      : { success_url: `${origin}/dashboard?upgraded=1`, cancel_url: `${origin}/premium?canceled=1` }),
   });
-  if (!session.url) throw new Error("Stripe did not return a checkout URL");
-  return session.url;
 }
 
 /** One-time token pack purchase — price re-verified against token_packs per session. */
@@ -67,7 +70,8 @@ export async function createPackCheckoutSessionFor(
   user: User,
   packKey: string,
   origin: string,
-): Promise<string> {
+  embedded = false,
+): Promise<Stripe.Checkout.Session> {
   const admin = createAdminClient();
 
   const { data: pack } = await admin
@@ -95,13 +99,11 @@ export async function createPackCheckoutSessionFor(
     affiliateId = aff?.id ?? "";
   }
 
-  const session = await stripe.checkout.sessions.create({
+  return stripe.checkout.sessions.create({
     mode: "payment",
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: user.email ?? undefined,
     client_reference_id: user.id,
-    success_url: `${origin}/dashboard?topup=1`,
-    cancel_url: `${origin}/premium?canceled=1#topup`,
     metadata: {
       user_id: user.id,
       pack: pack.key,
@@ -109,7 +111,8 @@ export async function createPackCheckoutSessionFor(
       affiliate_id: affiliateId,
     },
     allow_promotion_codes: true,
+    ...(embedded
+      ? { ui_mode: "embedded_page", return_url: `${origin}/checkout/return?session_id={CHECKOUT_SESSION_ID}` }
+      : { success_url: `${origin}/dashboard?topup=1`, cancel_url: `${origin}/premium?canceled=1#topup` }),
   });
-  if (!session.url) throw new Error("Stripe did not return a checkout URL");
-  return session.url;
 }

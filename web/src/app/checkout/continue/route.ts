@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { createCheckoutSessionFor } from "@/lib/checkout";
 import { publicOrigin } from "@/lib/request-origin";
 
 /**
@@ -37,10 +36,6 @@ export async function GET(request: Request) {
     }
   }
 
-  try {
-    const checkoutUrl = await createCheckoutSessionFor(user, plan, origin);
-    return NextResponse.redirect(checkoutUrl, { status: 303 });
-  } catch {
-    return NextResponse.redirect(`${origin}/premium?checkout_error=1`);
-  }
+  // Referral claimed above → hand off to the on-site embedded checkout page.
+  return NextResponse.redirect(`${origin}/checkout?plan=${plan}`, { status: 303 });
 }

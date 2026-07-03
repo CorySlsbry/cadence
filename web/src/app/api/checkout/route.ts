@@ -27,11 +27,11 @@ export async function POST(request: Request) {
 
   const origin = publicOrigin(request);
   try {
-    const url =
+    const session =
       "plan" in body
         ? await createCheckoutSessionFor(user, body.plan, origin)
         : await createPackCheckoutSessionFor(user, body.pack, origin);
-    return NextResponse.json({ url });
+    return NextResponse.json({ url: session.url });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "checkout failed";
     const status = msg.endsWith("not purchasable") ? 400 : 502;
