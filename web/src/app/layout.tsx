@@ -14,9 +14,27 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://clouthook.com"),
   title: "CloutHook — Studio-grade short-form video, from one raw take",
   description:
     "Analyze a reference, record once, and let CloutHook clean and stitch a premium 1080×1920 vertical video that matches its style.",
+  alternates: { canonical: "./" },
+  openGraph: {
+    type: "website",
+    url: "./",
+    siteName: "CloutHook",
+    title: "CloutHook — Studio-grade short-form video, from one raw take",
+    description:
+      "Analyze a reference, record once, and let CloutHook clean and stitch a premium 1080×1920 vertical video that matches its style.",
+    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "CloutHook" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CloutHook — Studio-grade short-form video, from one raw take",
+    description:
+      "Analyze a reference, record once, and let CloutHook clean and stitch a premium 1080×1920 vertical video that matches its style.",
+    images: ["/icon-512.png"],
+  },
 };
 
 export const viewport: Viewport = { themeColor: "#07060c" };
