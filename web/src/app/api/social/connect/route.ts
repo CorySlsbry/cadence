@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { listAccounts } from "@/lib/blotato";
+import { encryptSecret } from "@/lib/crypto";
 
 const Body = z.object({ apiKey: z.string().min(10) });
 
@@ -34,7 +35,8 @@ export async function POST(request: Request) {
 
   const { error } = await supabase
     .from("profiles")
-    .update({ blotato_api_key: body.apiKey, blotato_accounts: accounts })
+    // Store the key AES-256-GCM encrypted (server-only master key); clear any legacy plaintext.
+    .update({ blotato_api_key_enc: encryptSecret(body.apiKey), blotato_api_key: null, blotato_accounts: accounts })
     .eq("id", user.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

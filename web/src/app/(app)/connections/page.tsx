@@ -15,7 +15,7 @@ export default async function ConnectionsPage({
   const supabase = await createClient();
   const { data: rows } = await supabase.rpc("my_connections");
   const { data: socialRows } = await supabase.rpc("my_social_connections");
-  const { data: profile } = await supabase.from("profiles").select("blotato_api_key").maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("blotato_api_key_enc").maybeSingle();
 
   const statuses: Record<string, ConnStatus> = {};
   for (const r of (rows ?? []) as ConnStatus[]) statuses[r.provider] = r;
@@ -32,10 +32,10 @@ export default async function ConnectionsPage({
         <p className="mt-1 max-w-2xl text-sm text-white/45">
           Connect your own provider accounts so AI generation runs on <em>your</em> credits, not a
           shared pool. Keys are validated, encrypted, and never shown again. Leave a provider
-          unconnected to use Cadence&apos;s included quota.
+          unconnected to use CloutHook&apos;s included quota.
         </p>
       </div>
-      <ConnectionsPanel statuses={statuses} blotatoConnected={!!profile?.blotato_api_key} />
+      <ConnectionsPanel statuses={statuses} blotatoConnected={!!profile?.blotato_api_key_enc} />
       <SocialConnect
         social={social}
         configured={configured}

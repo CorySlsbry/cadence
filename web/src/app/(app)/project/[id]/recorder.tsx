@@ -161,7 +161,7 @@ export function Recorder({ onRecorded, onRecordStart, frameUrl }: { onRecorded: 
 
       <p className="text-center text-xs text-white/35">
         Hit Record — you get a 3-second countdown, then the teleprompter scrolls. Keep talking through
-        mistakes; Cadence removes silence, fillers, and bad takes.
+        mistakes; CloutHook removes silence, fillers, and bad takes.
       </p>
     </div>
   );

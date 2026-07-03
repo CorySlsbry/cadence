@@ -61,6 +61,6 @@ export const PROVIDER_META: Record<
     label: "Anthropic (Claude)",
     createUrl: "https://platform.claude.com/settings/keys",
     createLabel: "Settings → API Keys",
-    why: "Powers Claude-driven features and the tools the Cadence MCP server runs for you.",
+    why: "Powers Claude-driven features and the tools the CloutHook MCP server runs for you.",
   },
 };

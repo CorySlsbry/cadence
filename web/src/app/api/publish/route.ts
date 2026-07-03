@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { publish, type BlotatoAccount, type Platform } from "@/lib/blotato";
+import { decryptSecret } from "@/lib/crypto";
 
 const Body = z.object({
   jobId: z.string().uuid(),
@@ -36,12 +37,13 @@ export async function POST(request: Request) {
   // Blotato key + connected accounts (server-side only).
   const { data: profile } = await supabase
     .from("profiles")
-    .select("blotato_api_key, blotato_accounts")
+    .select("blotato_api_key_enc, blotato_accounts")
     .eq("id", user.id)
     .single();
-  if (!profile?.blotato_api_key) {
+  if (!profile?.blotato_api_key_enc) {
     return NextResponse.json({ error: "Connect your Blotato account first." }, { status: 400 });
   }
+  const blotatoKey = decryptSecret(profile.blotato_api_key_enc); // server-side only
   const accounts = (profile.blotato_accounts ?? []) as BlotatoAccount[];
 
   // The finished render — RLS guarantees it's this user's job.
@@ -69,7 +71,7 @@ export async function POST(request: Request) {
     }
     const block = (body.captions?.[platform] ?? {}) as Record<string, unknown>;
     try {
-      const r = await publish(profile.blotato_api_key, {
+      const r = await publish(blotatoKey, {
         accountId: acct.accountId,
         platform,
         text: postText(platform, block),
