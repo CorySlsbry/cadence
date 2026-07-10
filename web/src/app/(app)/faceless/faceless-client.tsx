@@ -132,7 +132,9 @@ export function FacelessClient() {
   const avatarFileRef = useRef<HTMLInputElement | null>(null);
   const [lengthSec, setLengthSec] = useState<"30" | "60" | "90">("60");
   const [resolution, setResolution] = useState<"1080p" | "4k">("1080p");
-  const [sceneMode, setSceneMode] = useState<"stills" | "motion">("stills");
+  // Default to real AI motion (FastWan i2v on our GPU) — animated scenes are the product's
+  // core value; users can switch to "stills" for a faster/cheaper render.
+  const [sceneMode, setSceneMode] = useState<"stills" | "motion">("motion");
 
   // Voice previews — one shared audio element; whichever key is playing owns it.
   const audioRef = useRef<HTMLAudioElement | null>(null);
