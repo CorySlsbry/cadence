@@ -36,6 +36,11 @@ export default async function LibraryPage() {
     .order("created_at", { ascending: false })
     .limit(60);
 
+  // Which social accounts the user has connected — drives the per-card "Post to…" buttons.
+  // Same RPC the Connections page uses; returns rows the client never sees tokens for.
+  const { data: socialRows } = await supabase.rpc("my_social_connections");
+  const connected = ((socialRows ?? []) as { platform: string }[]).map((r) => r.platform);
+
   const items: LibraryItem[] = [];
   for (const job of (jobs ?? []) as JobRow[]) {
     if (!job.output_path) continue;
@@ -63,7 +68,7 @@ export default async function LibraryPage() {
         Finished renders live here — stream them, download them, or clear them out. Clips and
         social captions stay on each project&apos;s page.
       </p>
-      <LibraryGrid items={items} />
+      <LibraryGrid items={items} connected={connected} />
     </div>
   );
 }
