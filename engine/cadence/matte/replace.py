@@ -230,7 +230,26 @@ def build_background_video_mixed(
     Ken-Burns still. "Animated scenes" therefore degrades gracefully per-scene instead
     of all-or-nothing."""
     ff = ff or FFmpeg()
-    by_image = {ins.image_path: clip for ins, clip in items}
+    # A raw ~2s motion clip hard-looped to fill a ~7s scene window jump-cuts back to its first
+    # frame every 2s — a visible "snap" that reads as glitchy AI. Pre-build a seamless PALINDROME
+    # (forward+reverse) of each clip: it starts and ends on the same frame, so -stream_loop is
+    # seamless (boomerang motion). Falls back to the raw clip if the pre-pass fails.
+    by_image: dict[str, str] = {}
+    for ins, clip in items:
+        if not clip:
+            continue
+        pp = clip.rsplit(".", 1)[0] + "_pp.mp4"
+        try:
+            ff.run([
+                "-y", "-i", clip,
+                "-filter_complex", "[0:v]split[f][r];[r]reverse[rr];[f][rr]concat=n=2:v=1[v]",
+                "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                "-pix_fmt", "yuv420p", pp,
+            ], timeout=120)
+            by_image[ins.image_path] = pp
+        except Exception as exc:  # noqa: BLE001 - degrade to the raw (hard-looped) clip
+            print(f"[matte] palindrome pre-pass failed ({exc!r}) -> raw loop", flush=True)
+            by_image[ins.image_path] = clip
     segs = _background_segments([ins for ins, _ in items], duration)
     if not segs:
         raise ValueError("build_background_video_mixed: no usable segments")
