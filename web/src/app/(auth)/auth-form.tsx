@@ -13,7 +13,10 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   // and lands the user directly in Stripe Checkout via /checkout/continue.
   const planParam = params.get("plan");
   const plan = planParam === "base" || planParam === "creator" ? planParam : null;
-  const next = plan ? `/checkout/continue?plan=${plan}` : (params.get("next") ?? "/dashboard");
+  const rawNext = plan ? `/checkout/continue?plan=${plan}` : (params.get("next") ?? "/dashboard");
+  // Only allow same-origin relative paths — an attacker ?next=https://evil.com would otherwise
+  // redirect a just-authenticated user off-site (post-auth phishing). Mirrors auth/callback/route.ts.
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
   const supabase = createClient();
 
   const [email, setEmail] = useState("");

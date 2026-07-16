@@ -2,7 +2,37 @@
 // "front half" features: brand blueprint, outlier analysis, script generation.
 // GEMINI_API_KEY is mounted from Secret Manager (same secret the worker uses).
 
+import { lookup } from "dns/promises";
+import net from "net";
+
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+/** Reject private/loopback/link-local/ULA/cloud-metadata IPs (SSRF guard). */
+function isPrivateIp(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const p = ip.split(".").map(Number);
+    return (
+      p[0] === 0 || p[0] === 10 || p[0] === 127 ||
+      (p[0] === 169 && p[1] === 254) ||               // link-local + AWS/GCP metadata
+      (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||
+      (p[0] === 192 && p[1] === 168) ||
+      (p[0] === 100 && p[1] >= 64 && p[1] <= 127)     // CGNAT
+    );
+  }
+  const lo = ip.toLowerCase();
+  return lo === "::1" || lo.startsWith("fc") || lo.startsWith("fd") ||
+    lo.startsWith("fe80") || lo.startsWith("::ffff:127") || lo.startsWith("::ffff:169.254");
+}
+
+/** A user-supplied image URL must be https, port 443, and resolve to a PUBLIC ip — otherwise
+ *  the server-side fetch is an SSRF into internal/metadata endpoints. */
+async function assertPublicHttpsUrl(raw: string): Promise<void> {
+  const u = new URL(raw);
+  if (u.protocol !== "https:") throw new Error("image url must be https");
+  if (u.port && u.port !== "443") throw new Error("image url port not allowed");
+  const { address } = await lookup(u.hostname);
+  if (isPrivateIp(address)) throw new Error("image url resolves to a non-public address");
+}
 
 type GeminiOpts = {
   model?: string;
@@ -30,8 +60,8 @@ export async function geminiJson<T>(opts: GeminiOpts): Promise<T> {
   const parts: Record<string, unknown>[] = [];
   if (opts.imageUrl) {
     try {
-      if (new URL(opts.imageUrl).protocol !== "https:") throw new Error("non-https image url");
-      const img = await fetch(opts.imageUrl, { signal: AbortSignal.timeout(6000) });
+      await assertPublicHttpsUrl(opts.imageUrl);
+      const img = await fetch(opts.imageUrl, { signal: AbortSignal.timeout(6000), redirect: "error" });
       if (img.ok) {
         const buf = Buffer.from(await img.arrayBuffer());
         if (buf.length > 0 && buf.length < 4_000_000) {

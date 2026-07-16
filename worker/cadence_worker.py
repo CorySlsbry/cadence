@@ -334,13 +334,19 @@ class Worker:
             ctrl = parse_customization(job.get("customization") or {})
 
             # Music bed (uploaded track): download once; applied to every render below.
+            # Owner-scoped: the worker uses the service role (bypasses RLS), so a user-supplied
+            # storage key must live under the requester's own folder or we refuse it.
             music_path = None
             if ctrl.music_key:
-                try:
-                    ext = os.path.splitext(ctrl.music_key)[1] or ".mp3"
-                    music_path = self._download(UPLOADS, ctrl.music_key, os.path.join(tmp, f"music{ext}"))
-                except Exception as exc:  # noqa: BLE001 - music is optional
-                    print(f"[worker] music download failed ({exc}); no music bed", flush=True)
+                if not ctrl.music_key.startswith(f"{user_id}/"):
+                    print("[worker] music_key outside user folder; skipping music bed", flush=True)
+                    music_path = None
+                else:
+                    try:
+                        ext = os.path.splitext(ctrl.music_key)[1] or ".mp3"
+                        music_path = self._download(UPLOADS, ctrl.music_key, os.path.join(tmp, f"music{ext}"))
+                    except Exception as exc:  # noqa: BLE001 - music is optional
+                        print(f"[worker] music download failed ({exc}); no music bed", flush=True)
 
             # Avatar jobs carry BOTH customization.avatar and customization.faceless, so resolve
             # the avatar key first and EXCLUDE avatar jobs from the faceless branch — otherwise an
@@ -888,16 +894,20 @@ class Worker:
         if not char_id:
             raise RuntimeError("avatar: no character_id on the job")
 
-        # 1) Load the avatar (worker uses the service role → bypasses RLS).
+        # 1) Load the avatar (worker uses the service role → bypasses RLS). OWNER-SCOPED:
+        # only resolve a character the requester OWNS, else an attacker could render another
+        # user's photoreal likeness (deepfake). Fail-closed on a missing row (below).
+        owner_id = self._current_user_id
         crow = (self.supabase.table("characters")
                 .select("source_path,source_kind,voice_id,kind")
-                .eq("id", char_id).single().execute()).data
+                .eq("id", char_id).eq("user_id", owner_id).single().execute()).data
         if not crow or crow.get("kind") != "photoreal" or not crow.get("source_path"):
             raise RuntimeError("avatar: character missing or not photoreal")
 
-        # 2) Consent FAIL-CLOSED — never render a likeness without active consent.
+        # 2) Consent FAIL-CLOSED — never render a likeness without active consent. Also
+        # owner-scoped (defense-in-depth): the consent record must belong to the requester.
         consent = (self.supabase.table("consent_records")
-                   .select("id").eq("character_id", char_id)
+                   .select("id").eq("character_id", char_id).eq("user_id", owner_id)
                    .is_("revoked_at", "null").limit(1).execute()).data
         if not consent:
             raise RuntimeError("avatar: no active consent on file — refusing to render")
