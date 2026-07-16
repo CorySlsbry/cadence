@@ -111,16 +111,22 @@ def build_ai_prompt(topic: str, caption: str) -> str:
     )
 
 
-def build_ai_prompt_scene(scene: str, caption: str, cine=None, style_override: str | None = None) -> str:
+def build_ai_prompt_scene(
+    scene: str, caption: str, cine=None, style_override: str | None = None, world: str = ""
+) -> str:
     """The loop-tuned template: a distilled SCENE + cinematography look + a clean CAPTION.
 
     ``style_override`` swaps the photoreal framing for a named art style (claymation,
     3D cartoon, anime, …) — the override REPLACES the photographic language entirely,
     because "hyperrealistic photograph" and "claymation" fight each other in the model.
+    ``world`` is a video-level visual anchor (same recurring subject / setting / palette /
+    lighting) prepended to EVERY scene so the whole render reads as one continuous film
+    instead of a slideshow of unrelated images. Paired with a locked seed in build_ai_broll.
     """
+    anchor = f"{world}. " if world else ""
     if style_override:
         return (
-            f"A {style_override}, vertical 9:16 composition: {scene}. "
+            f"{anchor}A {style_override}, vertical 9:16 composition: {scene}. "
             "Ultra detailed, premium quality, masterfully crafted, rich texture and depth. "
             f"The phrase \"{caption}\" appears cleanly integrated into the scene in crisp readable "
             "typography. No watermark, no garbled text."
@@ -131,7 +137,7 @@ def build_ai_prompt_scene(scene: str, caption: str, cine=None, style_override: s
         else "50mm lens, at f/2.8 shallow depth of field, soft natural lighting"
     )
     return (
-        f"A hyperrealistic cinematic vertical 9:16 photograph: {scene}. {look}. "
+        f"{anchor}A hyperrealistic cinematic vertical 9:16 photograph: {scene}. {look}. "
         "Ultra detailed, modern, clean, premium editorial. "
         f"The phrase \"{caption}\" appears cleanly on a screen, sign, or surface in the scene in crisp "
         "modern typography. Photoreal, no watermark, no garbled text."
@@ -211,6 +217,18 @@ def build_ai_broll(
     if distiller is not None and hasattr(distiller, "set_context"):
         full_text = " ".join(w[0] for w in words_out)
         distiller.set_context(topic=context_topic, full_text=full_text, direction=direction)
+    # Visual COHESION: one locked seed + a shared "world anchor" prepended to every scene so
+    # the render reads as ONE continuous film instead of a slideshow of unrelated images. The
+    # seed is stable per-topic (deterministic) so all scenes share the model's aesthetic; the
+    # anchor keeps subject/setting/palette/lighting consistent. $0 extra GPU (same gen call).
+    import hashlib
+
+    video_seed = int(hashlib.sha256((context_topic or "cadence").encode()).hexdigest()[:8], 16)
+    world = (
+        "Consistent cinematic world across every shot: the SAME recurring subject/character, "
+        "setting, colour palette, film stock, and lighting throughout — as if these are frames "
+        "from ONE continuous film, not separate images"
+    )
     prev_scenes: list[str] = []
     inserts: list[BrollInsert] = []
     for idx, (start, end, motion) in enumerate(windows):
@@ -241,15 +259,15 @@ def build_ai_broll(
             except TypeError:  # older distillers without the prev_scenes kwarg
                 scene, caption = distiller.distill(window_text)
             prev_scenes.append(scene)
-            prompt = build_ai_prompt_scene(scene, caption, cine=cine, style_override=style_override)
+            prompt = build_ai_prompt_scene(scene, caption, cine=cine, style_override=style_override, world=world)
         else:
             topic = topic_for_window(words_out, start, end) or "a clean modern workspace"
             caption = caption_for_topic(topic)
-            prompt = build_ai_prompt_scene(topic, caption, cine=cine, style_override=style_override)
+            prompt = build_ai_prompt_scene(topic, caption, cine=cine, style_override=style_override, world=world)
         if direction:
             prompt = f"{prompt} Creator's scene direction (follow it): {direction}"
         try:
-            res = generator.generate(prompt, aspect="9x16", style_refs=style_refs)
+            res = generator.generate(prompt, aspect="9x16", style_refs=style_refs, seed=video_seed)
         except BudgetExceeded:
             break  # budget or persistent rate-limit — keep the cutaways generated so far
         except Exception as exc:  # noqa: BLE001 - a one-off failure (e.g. safety filter) skips this window
