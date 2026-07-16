@@ -185,7 +185,9 @@ export function FacelessClient({ maxLengthSec }: { maxLengthSec: number }) {
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFiredInput = useRef<string>("");
 
-  const scenes = Math.max(3, Math.min(Math.round(Number(lengthSec) / 7), 16));
+  // ~1 scene / 7s, matching the worker's cap (CADENCE_MAX_SCENES=130) — so a long video's
+  // token estimate is honest (a 15-min motion render is ~384 tokens, not the old "48").
+  const scenes = Math.max(3, Math.min(Math.round(Number(lengthSec) / 7), 130));
 
   const connsByPlatform = useMemo(() => {
     const m: Record<string, SocialConn[]> = {};

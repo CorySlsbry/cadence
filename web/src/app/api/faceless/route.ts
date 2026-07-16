@@ -204,6 +204,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   }
 
+  // Cheap precondition BEFORE the expensive Gemini script-gen: if this render needs an ElevenLabs
+  // key, verify it's connected now — otherwise a no-key request burns a Gemini 2.5 Pro call and
+  // then 400s (denial-of-wallet). The later per-line/single checks still resolve+use the key.
+  const needsElevenLabs =
+    body.voiceProvider === "elevenlabs" || (!!duo && duo[0].voiceProvider !== "gemini");
+  if (needsElevenLabs) {
+    const { resolveElevenLabsKey } = await import("@/lib/elevenlabs");
+    if (!(await resolveElevenLabsKey(user.id))) {
+      return NextResponse.json(
+        { error: "Connect your ElevenLabs key in Connections to use your own voice." },
+        { status: 400 },
+      );
+    }
+  }
+
   // 1) Script — written for narration over visuals (not a talking head).
   let title = topic.slice(0, 70) || "Faceless video";
   if (!script) {
