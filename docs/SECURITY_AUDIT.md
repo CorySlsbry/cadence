@@ -9,3 +9,16 @@ Focused adversarial review of the NEW authz/billing surfaces (verified in code +
 - **Per-user token budget** (`worker/cadence_worker.py`): animation metered per-user via `spend_tokens` (pre-charged before GPU spend); global `CADENCE_AI_BUDGET_USD` is a cross-user runaway guard only ($500), no longer a per-user starve. PASS.
 
 Result: no cross-tenant, IDOR, or privilege-escalation issue found in the new surfaces. Live rev: cadence-web-00079-lvs, cadence-worker-00054-hps.
+
+## 2026-07-03 (cont.) — Full auth/edge audit + 24h sessions + 2FA + linter hardening
+Ran enterprise-security-audit (Supabase linter + live black-box probes + code review). Focus: session lifetime + 2FA.
+**LIVE + verified:**
+- **24h session time-box** — Supabase Auth → Sessions set to 24h (was 0/never). Users must re-auth daily.
+- **TOTP MFA enabled** — Auth → Multi-Factor: TOTP (App Authenticator) = Enabled (users can enroll an authenticator app).
+- **Leaked-password protection** — enabled + FUNCTIONALLY verified: signup with `Password123` → `422 weak_password {reasons:["pwned"]}` (HaveIBeenPwned check active).
+- **RPC surface locked** (linter 0011/0028/0029) — revoked EXECUTE on notify_signup (trigger fn), rl_bump/my_*(anon); pinned guard_profiles_privileged_cols search_path. Migration `20260703010000` (applied + committed).
+- **Data-plane authz** — all `/api/*` data routes 401 unauth; `/admin` 307-redirects unauth; RLS deny-all/fail-closed on all credential/system tables (linter's 10 "RLS no policy" notices are the intended service-role-only vaults).
+**Built, NOT yet live (bonus):**
+- **SPA security headers** (HSTS/XFO DENY/CSP frame-ancestors/nosniff/Referrer/Permissions) — in `next.config.ts` + `proxy.ts` (committed). The header revision (cadence-web-00081/00082) 500s on boot (env identical to good rev → a code/runtime boot issue, undiagnosed); deferred to a safe follow-up. Site remains healthy on cadence-web-00079-lvs.
+**⚠️ Operational trap found:** cadence-web **traffic is PINNED to 00079-lvs** (from the earlier outage rollback). `gcloud run deploy` creates new revisions at 0% traffic — future web deploys must EXPLICITLY route traffic to the new (verified-good) revision, or they silently don't go live. (Routing --to-latest 500'd on the broken header rev → rolled back.)
+**Remaining for full 2FA (the chosen scope):** app-side TOTP enrollment UI + aal2 requirement on /admin — a focused build (not done this session).
