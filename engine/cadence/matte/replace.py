@@ -283,7 +283,7 @@ def build_background_video_mixed(
         "-c:v", "libx264", "-preset", "medium", "-crf", str(crf),
         "-pix_fmt", "yuv420p", "-r", str(fps), out,
     ]
-    ff.run(args, timeout=2400)
+    ff.run(args, timeout=7200)  # long (many-scene) videos concat far more inputs
     return out
 
 

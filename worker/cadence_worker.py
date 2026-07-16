@@ -181,6 +181,9 @@ class Worker:
         # Avatar jobs are PREPAID at enqueue (web deducts the flat avatar token cost), so the
         # per-scene token burn is suppressed for them. Global $ accounting still records.
         self._prepaid: bool = False
+        # Per-scene animation outcome of the last faceless render, merged into
+        # render_jobs.result. Set fresh by _render_faceless (worker runs at concurrency 1).
+        self._faceless_stats: dict[str, int] | None = None
 
     def _get_transcriber(self):
         if not self._transcriber_loaded:
@@ -366,7 +369,8 @@ class Worker:
                 hooks, repurpose = self._extras(edl_f, keys)
                 self._update(
                     job_id, status="done", progress=1.0, output_path=output_key,
-                    result=result.to_dict(), social_captions=captions,
+                    result={**result.to_dict(), **(self._faceless_stats or {})},
+                    social_captions=captions,
                     hooks=hooks, repurpose=repurpose, error=None,
                 )
                 print(f"[worker] job {job_id} done (faceless) -> {output_key}", flush=True)
@@ -579,7 +583,8 @@ class Worker:
 
         # One scene every ~7s, snapped to sentence pauses: 3..16 scenes per video.
         gkey, gbyok = (keys or {}).get("gemini", (None, False))
-        cap = max(3, min(round(dur / 7.0), 16))
+        # ~7s/scene; hard max is configurable (the user's token balance is the real bound).
+        cap = max(3, min(round(dur / 7.0), int(os.environ.get("CADENCE_MAX_SCENES", "130"))))
         interval = max(3.5, dur / cap)
         windows = plan_background_windows(words_out, dur, interval=interval)
         n = max(2, min(len(windows), cap))
@@ -615,56 +620,102 @@ class Worker:
         gen_url = os.environ.get("CADENCE_GEN_URL")
         gen_token = os.environ.get("CADENCE_GEN_TOKEN")
         if animate and gen_url and gen_token:
-            # True motion: animate each scene on our GPU (FastWan i2v). Each animated
-            # scene meters 2 extra tokens; failures/budget keep that scene as a still.
+            # True motion: animate each scene on our GPU (FastWan i2v), BOUNDED-PARALLEL so a
+            # long video doesn't serialize dozens of ~cold L4 calls. Each animated scene meters
+            # 2 tokens; a failed/over-budget scene degrades to its still (graceful, per-scene).
+            import concurrent.futures
+
             from cadence.imagegen.ledger import BudgetExceeded
             from cadence.imagegen.selfhost import animate_image
             from cadence.matte.replace import build_background_video_mixed
 
-            anim_ledger = self._ledger(float(os.environ.get("CADENCE_AI_BUDGET_USD", "10")))
+            # Per-user tokens (2/animated scene, burned via spend_tokens) are the REAL gate on
+            # how much a user can animate. The global $ cap is only a cross-user runaway guard —
+            # kept high (default $500) so it never silently stills a paying user mid-render.
+            anim_ledger = self._ledger(float(os.environ.get("CADENCE_AI_BUDGET_USD", "500")))
             motion = SCENE_STYLES.get(scene_style, "cinematic photoreal")
-            # Hard wall-clock budget: 6 scenes x 900s timeouts could breach the
-            # 3600s Cloud Run job ceiling and kill the whole render; past the
-            # budget the remaining scenes stay stills.
-            anim_budget = float(os.environ.get("CADENCE_ANIMATE_BUDGET_S", "2400"))
+            anim_prompt = (f"{motion}. The characters and subject move naturally; "
+                           f"subtle cinematic camera push; keep composition and style.")
+            # 2s loops seamlessly under captions; each extra second is ~3min more L4 time/scene.
+            anim_secs = float(os.environ.get("CADENCE_ANIMATE_SECONDS", "2.0"))
+            concurrency = max(1, int(os.environ.get("CADENCE_ANIMATE_CONCURRENCY", "6")))
+            # Wall-clock guard, largely obsolete under parallelism + per-user token gating; kept
+            # only as a runaway ceiling (default 7200s, well above any real render).
+            anim_budget = float(os.environ.get("CADENCE_ANIMATE_BUDGET_S", "7200"))
             anim_start = time.monotonic()
-            items = []
-            for k, ins in enumerate(inserts):
-                clip_path = None
-                if time.monotonic() - anim_start > anim_budget:
-                    print(f"[worker] faceless: animate budget ({anim_budget:.0f}s) hit "
-                          f"at scene {k}; rest stay stills", flush=True)
-                    items.append((ins, None))
-                    continue
+
+            def _animate_one(idx: int, ins) -> bytes:
+                """GPU-animate one scene with ONE retry. No ledger access here — charging stays
+                serialized on the main thread (thread-safe against the shared ai_spend row)."""
+                with open(ins.image_path, "rb") as fh:
+                    img_bytes = fh.read()
+                last_exc: Exception | None = None
+                for attempt in range(2):  # initial try + one retry, then let the caller degrade
+                    try:
+                        return animate_image(
+                            gen_url, gen_token, img_bytes, prompt=anim_prompt,
+                            seconds=anim_secs, width=704, height=1280,
+                        )
+                    except Exception as exc:  # noqa: BLE001 - retry once before degrading
+                        last_exc = exc
+                        if attempt == 0:
+                            print(f"[worker] faceless: animate scene {idx} failed ({exc!r}); "
+                                  f"retrying once", flush=True)
+                raise last_exc  # type: ignore[misc]  # loop always runs -> always set
+
+            # Pre-charge (serialized, main thread) so the per-user token budget gates BEFORE we
+            # spend L4 time: only paid-for scenes are submitted; the rest stay stills. Keeps every
+            # ledger call on one thread (no lock) and preserves charge-before-animate semantics.
+            to_animate: list[int] = []
+            for k in range(len(inserts)):
                 try:
                     anim_ledger.charge(0.05)
                     anim_ledger.charge(0.05)  # 2 tokens per animated scene
-                    with open(ins.image_path, "rb") as fh:
-                        img_bytes = fh.read()
-                    mp4 = animate_image(
-                        gen_url, gen_token, img_bytes,
-                        prompt=f"{motion}. The characters and subject move naturally; "
-                               f"subtle cinematic camera push; keep composition and style.",
-                        # 2s loops seamlessly under captions; each extra second is ~3min
-                        # more L4 time per scene against the worker's 3600s job ceiling.
-                        seconds=float(os.environ.get("CADENCE_ANIMATE_SECONDS", "2.0")),
-                        width=704, height=1280,
-                    )
-                    clip_path = os.path.join(tmp, f"scene_motion_{k}.mp4")
-                    with open(clip_path, "wb") as fh:
-                        fh.write(mp4)
-                    print(f"[worker] faceless: scene {k} animated ({len(mp4)//1024}KB)", flush=True)
+                    to_animate.append(k)
                 except BudgetExceeded:
-                    print(f"[worker] faceless: token budget hit at scene {k}; rest stay stills", flush=True)
-                except Exception as exc:  # noqa: BLE001 - per-scene degradation to the still
-                    print(f"[worker] faceless: animate scene {k} failed ({exc!r}) -> still", flush=True)
-                items.append((ins, clip_path))
-                if self._current_job_id:
-                    self._update(self._current_job_id,
-                                 progress=round(0.55 + 0.25 * (k + 1) / len(inserts), 2))
+                    print(f"[worker] faceless: token/AI budget hit at scene {k}; "
+                          f"rest stay stills", flush=True)
+                    break
+
+            clips: dict[int, str] = {}  # scene index -> motion clip path (absent -> still)
+            if to_animate:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+                    futs = {pool.submit(_animate_one, k, inserts[k]): k for k in to_animate}
+                    done = 0
+                    for fut in concurrent.futures.as_completed(futs):
+                        k = futs[fut]
+                        done += 1
+                        try:
+                            if time.monotonic() - anim_start > anim_budget:
+                                raise TimeoutError(f"animate budget {anim_budget:.0f}s exceeded")
+                            mp4 = fut.result()
+                            clip_path = os.path.join(tmp, f"scene_motion_{k}.mp4")
+                            with open(clip_path, "wb") as fh:
+                                fh.write(mp4)
+                            clips[k] = clip_path
+                            print(f"[worker] faceless: scene {k} animated "
+                                  f"({len(mp4)//1024}KB)", flush=True)
+                        except Exception as exc:  # noqa: BLE001 - degrade this scene to its still
+                            print(f"[worker] faceless: animate scene {k} failed "
+                                  f"({exc!r}) -> still", flush=True)
+                        if self._current_job_id:
+                            self._update(self._current_job_id,
+                                         progress=round(0.55 + 0.25 * done / len(to_animate), 2))
+
+            # Reassemble in ORIGINAL scene order — compositing depends on scene sequence.
+            items = [(ins, clips.get(k)) for k, ins in enumerate(inserts)]
+            animated_scenes = len(clips)
+            self._faceless_stats = {
+                "animated_scenes": animated_scenes,
+                "degraded_scenes": len(inserts) - animated_scenes,  # scenes that fell back to still
+                "scenes_total": len(inserts),
+            }
             build_background_video_mixed(items, dur, bg, ff=self.ff, width=w, height=h, fps=fps)
         else:
             build_background_video(inserts, dur, bg, ff=self.ff, width=w, height=h, fps=fps)
+            self._faceless_stats = {
+                "animated_scenes": 0, "degraded_scenes": 0, "scenes_total": len(inserts),
+            }
         if self._current_job_id:
             self._update(self._current_job_id, progress=0.8)
 
@@ -708,7 +759,7 @@ class Worker:
              "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-r", str(fps),
              "-c:a", "aac", "-b:a", "192k", out_path]
         )
-        self.ff.run(args, timeout=3600)
+        self.ff.run(args, timeout=7200)  # long (many-scene) videos take longer to mux/encode
         out_info = probe_media(out_path, self.ff)
         if out_info.duration <= 0:
             raise RuntimeError("faceless: render produced an empty output")
@@ -1153,7 +1204,9 @@ class Worker:
         """Pick the best available, budget-capped generator: Imagen (Gemini key) →
         Ideogram (key) → free stub. ``quality`` (fast|standard|ultra) picks the Imagen tier.
         A BYOK user spends their own Gemini quota, so they skip the shared ai_spend cap (ledger=None)."""
-        cap = float(os.environ.get("CADENCE_AI_BUDGET_USD", "10"))
+        # Per-user tokens (burned per image via spend_tokens) are the real gate; this shared $
+        # cap is only a cross-user runaway guard, kept high so it never stills a paying user.
+        cap = float(os.environ.get("CADENCE_AI_BUDGET_USD", "500"))
         ledger = None if is_byok else self._ledger(cap)
         gen_url = os.environ.get("CADENCE_GEN_URL")
         gen_token = os.environ.get("CADENCE_GEN_TOKEN")
