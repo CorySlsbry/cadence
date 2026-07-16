@@ -9,6 +9,7 @@ const BLURBS: Record<string, string> = {
   free: "Taste the studio.",
   base: "For the consistent creator.",
   creator: "For the daily publisher.",
+  agency: "For teams running multiple accounts.",
 };
 
 function money(v: string | number): string {
@@ -40,7 +41,10 @@ export default async function PremiumPage() {
       credits: paid ? `${p.monthly_tokens} tokens / mo` : `${p.monthly_tokens} tokens to start`,
       blurb: BLURBS[p.key] ?? "",
       features: Array.isArray(p.features) ? (p.features as string[]) : [],
-      plan: p.key === "base" || p.key === "creator" ? (p.key as "base" | "creator") : null,
+      plan:
+        p.key === "base" || p.key === "creator" || p.key === "agency"
+          ? (p.key as "base" | "creator" | "agency")
+          : null,
       highlight: p.key === "creator",
     };
   });

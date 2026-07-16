@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const origin = publicOrigin(request);
   const plan = url.searchParams.get("plan");
-  if (plan !== "base" && plan !== "creator") {
+  if (plan !== "base" && plan !== "creator" && plan !== "agency") {
     return NextResponse.redirect(`${origin}/premium`);
   }
 

@@ -5,17 +5,41 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { SOCIAL, type SocialPlatform } from "@/lib/social-oauth";
 
-// Direct publish of a finished render to a connected social account. X first
+// Direct publish of a finished render to connected social account(s). X first
 // (v2 chunked media upload + POST /2/tweets); other platforms join as their
 // upload APIs get wired. Runs server-side with the user's own platform tokens.
+//
+// Two request shapes (both supported):
+//   { platform, jobId, caption }          — single account for a platform (back-compat)
+//   { connectionIds: [...], jobId, caption } — fan out to specific connected accounts
+// EVERY connection is loaded scoped to the caller (id + user_id) before we ever touch
+// its tokens — a client-supplied connection id is never trusted on its own.
 
 export const maxDuration = 300; // video upload + processing poll
 
-const Body = z.object({
-  platform: z.enum(["x", "youtube", "linkedin", "facebook", "instagram", "tiktok"]),
-  jobId: z.string().uuid(),
-  caption: z.string().max(280).default(""),
-});
+const Body = z
+  .object({
+    platform: z.enum(["x", "youtube", "linkedin", "facebook", "instagram", "tiktok"]).optional(),
+    connectionIds: z.array(z.string().uuid()).min(1).max(20).optional(),
+    jobId: z.string().uuid(),
+    caption: z.string().max(280).default(""),
+  })
+  .refine((b) => !!b.platform || !!b.connectionIds, {
+    message: "platform or connectionIds required",
+  });
+
+// The columns a publish needs off a connection row.
+const CONN_COLS = "id, platform, access_token_enc, refresh_token_enc, expires_at, username, platform_user_id";
+
+type ConnRow = {
+  id: string;
+  platform: SocialPlatform;
+  access_token_enc: string;
+  refresh_token_enc: string | null;
+  expires_at: string | null;
+  username: string | null;
+  platform_user_id: string | null;
+};
 
 async function tiktokPublish(access: string, video: Buffer, caption: string): Promise<{ url: string; note: string }> {
   // Direct Post (video.publish): posts straight to the creator's profile — no manual tap in-app.
@@ -322,45 +346,22 @@ async function youtubeUpload(access: string, video: Buffer, title: string): Prom
   return up.id as string;
 }
 
-export async function POST(req: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  let body: z.infer<typeof Body>;
-  try {
-    body = Body.parse(await req.json());
-  } catch {
-    return NextResponse.json({ error: "platform 'x', jobId and caption (<=280) required" }, { status: 422 });
-  }
-  const platform: SocialPlatform = body.platform;
-
-  // The finished render must belong to the caller.
-  const { data: job } = await supabase
-    .from("render_jobs")
-    .select("id, status, output_path, customization")
-    .eq("id", body.jobId)
-    .single();
-  if (!job || job.status !== "done" || !job.output_path) {
-    return NextResponse.json({ error: "render not found or not finished" }, { status: 404 });
-  }
-
-  const admin = createAdminClient();
-  const { data: conn } = await admin
-    .from("social_connections")
-    .select("id, access_token_enc, refresh_token_enc, expires_at, username, platform_user_id")
-    .eq("user_id", user.id)
-    .eq("platform", platform)
-    .single();
-  if (!conn) {
-    return NextResponse.json(
-      { error: `connect your ${SOCIAL[platform].label} account first (Connections page)` },
-      { status: 409 },
-    );
-  }
+/**
+ * Publish one finished render to ONE connected account. Handles token decrypt +
+ * refresh (persisted back), then routes to the platform's upload path. The caller
+ * MUST have already verified `conn` belongs to the user. Throws on failure.
+ */
+async function publishToConnection(
+  admin: ReturnType<typeof createAdminClient>,
+  conn: ConnRow,
+  outputPath: string,
+  video: Buffer,
+  caption: string,
+): Promise<{ url: string; note?: string }> {
+  const platform = conn.platform;
+  const cfg = SOCIAL[platform];
 
   let access = decryptSecret(conn.access_token_enc);
-  const cfg = SOCIAL[platform];
   const expired = conn.expires_at && new Date(conn.expires_at).getTime() < Date.now() + 60_000;
   if (expired && conn.refresh_token_enc && cfg.refreshToken) {
     try {
@@ -372,14 +373,80 @@ export async function POST(req: Request) {
         expires_at: fresh.expiresIn ? new Date(Date.now() + fresh.expiresIn * 1000).toISOString() : null,
       }).eq("id", conn.id);
     } catch {
-      return NextResponse.json(
-        { error: `${SOCIAL[platform].label} session expired — reconnect on the Connections page` },
-        { status: 409 },
-      );
+      throw new Error(`${cfg.label} session expired — reconnect on the Connections page`);
     }
   }
 
-  const { data: blob, error: dlErr } = await admin.storage.from("outputs").download(job.output_path);
+  if (platform === "youtube") {
+    const videoId = await youtubeUpload(access, video, caption);
+    return { url: `https://youtube.com/watch?v=${videoId}`, note: "uploaded as private — set visibility in YouTube Studio" };
+  }
+  if (platform === "linkedin") {
+    if (!conn.platform_user_id) throw new Error("reconnect LinkedIn to refresh your profile id");
+    const url = await linkedinPublish(access, conn.platform_user_id, video, caption);
+    return { url };
+  }
+  if (platform === "facebook") {
+    const url = await facebookPublish(access, video, caption);
+    return { url };
+  }
+  if (platform === "tiktok") {
+    // Direct Post — tiktokPublish returns { url, note } (note reflects SELF_ONLY vs public).
+    return await tiktokPublish(access, video, caption);
+  }
+  if (platform === "instagram") {
+    if (!conn.platform_user_id) throw new Error("reconnect Instagram to refresh your account id");
+    // Instagram pulls the video from a URL — hand it a 1h signed link to the render.
+    const { data: signed } = await admin.storage.from("outputs").createSignedUrl(outputPath, 3600);
+    if (!signed?.signedUrl) throw new Error("could not stage the video for Instagram");
+    const url = await instagramPublish(access, conn.platform_user_id, signed.signedUrl, caption);
+    return { url };
+  }
+  // X (default)
+  const mediaId = await xUploadVideo(access, video);
+  const postRes = await fetch("https://api.x.com/2/tweets", {
+    method: "POST",
+    headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
+    body: JSON.stringify({ text: caption, media: { media_ids: [mediaId] } }),
+  });
+  const post = await postRes.json().catch(() => ({}));
+  const tweetId: string | undefined = post?.data?.id;
+  if (!postRes.ok || !tweetId) {
+    throw new Error(`tweet failed (${postRes.status}): ${JSON.stringify(post).slice(0, 200)}`);
+  }
+  return { url: `https://x.com/${conn.username ?? "i"}/status/${tweetId}` };
+}
+
+export async function POST(req: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  let body: z.infer<typeof Body>;
+  try {
+    body = Body.parse(await req.json());
+  } catch {
+    return NextResponse.json(
+      { error: "jobId + (platform or connectionIds) required; caption <=280" },
+      { status: 422 },
+    );
+  }
+
+  // The finished render must belong to the caller (render_jobs RLS scopes this read).
+  const { data: job } = await supabase
+    .from("render_jobs")
+    .select("id, status, output_path, customization")
+    .eq("id", body.jobId)
+    .single();
+  if (!job || job.status !== "done" || !job.output_path) {
+    return NextResponse.json({ error: "render not found or not finished" }, { status: 404 });
+  }
+  const outputPath: string = job.output_path;
+
+  const admin = createAdminClient();
+
+  // Download the render once, up front — the same bytes feed every target account.
+  const { data: blob, error: dlErr } = await admin.storage.from("outputs").download(outputPath);
   if (dlErr || !blob) return NextResponse.json({ error: "could not read the video" }, { status: 500 });
   const video = Buffer.from(await blob.arrayBuffer());
   if (video.length > 512 * 1024 * 1024) {
@@ -390,61 +457,69 @@ export async function POST(req: Request) {
     body.caption.trim() ||
     String((job.customization as { faceless?: { topic?: string } })?.faceless?.topic ?? "").slice(0, 270);
 
-  try {
-    if (platform === "youtube") {
-      const videoId = await youtubeUpload(access, video, caption);
-      return NextResponse.json({
-        ok: true,
-        url: `https://youtube.com/watch?v=${videoId}`,
-        note: "uploaded as private — set visibility in YouTube Studio",
-      });
-    }
-    if (platform === "linkedin") {
-      if (!conn.platform_user_id) {
-        return NextResponse.json({ error: "reconnect LinkedIn to refresh your profile id" }, { status: 409 });
+  // --- Multi-account fan-out: publish to each specified connection, report per account.
+  if (body.connectionIds && body.connectionIds.length) {
+    const ids = Array.from(new Set(body.connectionIds));
+    const results: {
+      connectionId: string;
+      platform: string | null;
+      ok: boolean;
+      url?: string;
+      note?: string;
+      error?: string;
+    }[] = [];
+    for (const id of ids) {
+      // OWNERSHIP CHECK — load by id AND user_id; never trust a client-supplied id.
+      const { data: conn } = await admin
+        .from("social_connections")
+        .select(CONN_COLS)
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .single();
+      if (!conn) {
+        results.push({ connectionId: id, platform: null, ok: false, error: "connection not found" });
+        continue;
       }
-      const url = await linkedinPublish(access, conn.platform_user_id, video, caption);
-      return NextResponse.json({ ok: true, url });
-    }
-    if (platform === "facebook") {
-      const url = await facebookPublish(access, video, caption);
-      return NextResponse.json({ ok: true, url });
-    }
-    if (platform === "tiktok") {
-      const { url, note } = await tiktokPublish(access, video, caption);
-      return NextResponse.json({ ok: true, url, note });
-    }
-    if (platform === "instagram") {
-      if (!conn.platform_user_id) {
-        return NextResponse.json({ error: "reconnect Instagram to refresh your account id" }, { status: 409 });
+      try {
+        const out = await publishToConnection(admin, conn as ConnRow, outputPath, video, caption);
+        results.push({ connectionId: id, platform: (conn as ConnRow).platform, ok: true, url: out.url, note: out.note });
+      } catch (err) {
+        results.push({
+          connectionId: id,
+          platform: (conn as ConnRow).platform,
+          ok: false,
+          error: err instanceof Error ? err.message : "publish failed",
+        });
       }
-      // Instagram pulls the video from a URL — hand it a 1h signed link to the render.
-      const { data: signed } = await admin.storage.from("outputs").createSignedUrl(job.output_path, 3600);
-      if (!signed?.signedUrl) {
-        return NextResponse.json({ error: "could not stage the video for Instagram" }, { status: 500 });
-      }
-      const url = await instagramPublish(access, conn.platform_user_id, signed.signedUrl, caption);
-      return NextResponse.json({ ok: true, url });
     }
-    const mediaId = await xUploadVideo(access, video);
-    const postRes = await fetch("https://api.x.com/2/tweets", {
-      method: "POST",
-      headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
-      body: JSON.stringify({ text: caption, media: { media_ids: [mediaId] } }),
-    });
-    const post = await postRes.json().catch(() => ({}));
-    const tweetId: string | undefined = post?.data?.id;
-    if (!postRes.ok || !tweetId) {
-      throw new Error(`tweet failed (${postRes.status}): ${JSON.stringify(post).slice(0, 200)}`);
-    }
-    return NextResponse.json({
-      ok: true,
-      url: `https://x.com/${conn.username ?? "i"}/status/${tweetId}`,
-    });
-  } catch (err) {
+    return NextResponse.json({ results });
+  }
+
+  // --- Back-compat single-platform path. Multiple accounts per platform are now possible,
+  // so pick the first the user owns rather than erroring on more than one row.
+  const platform: SocialPlatform = body.platform!;
+  const { data: rows } = await admin
+    .from("social_connections")
+    .select(CONN_COLS)
+    .eq("user_id", user.id)
+    .eq("platform", platform)
+    .order("created_at", { ascending: true })
+    .limit(1);
+  const conn = rows?.[0];
+  if (!conn) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "publish failed" },
-      { status: 502 },
+      { error: `connect your ${SOCIAL[platform].label} account first (Connections page)` },
+      { status: 409 },
     );
+  }
+
+  try {
+    const out = await publishToConnection(admin, conn as ConnRow, outputPath, video, caption);
+    return NextResponse.json({ ok: true, url: out.url, ...(out.note ? { note: out.note } : {}) });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "publish failed";
+    // Reconnect/session-expired failures are client-actionable (409); the rest are upstream (502).
+    const status = /session expired|reconnect/i.test(msg) ? 409 : 502;
+    return NextResponse.json({ error: msg }, { status });
   }
 }

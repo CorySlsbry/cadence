@@ -6,7 +6,7 @@ import { publicOrigin } from "@/lib/request-origin";
 
 // Either a subscription plan or a one-time token pack.
 const Body = z.union([
-  z.object({ plan: z.enum(["base", "creator"]) }),
+  z.object({ plan: z.enum(["base", "creator", "agency"]) }),
   z.object({ pack: z.string().min(1).max(40) }),
 ]);
 

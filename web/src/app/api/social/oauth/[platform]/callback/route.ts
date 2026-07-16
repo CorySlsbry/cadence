@@ -39,10 +39,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ plat
         refresh_token_enc: tokens.refresh ? encryptSecret(tokens.refresh) : null,
         platform_user_id: info.id ?? null,
         username: info.username ?? null,
+        // Multi-account: each connection carries a human label (the fetched handle) so the
+        // Connections UI can name every account under a platform.
+        label: info.username ?? null,
         scopes: tokens.scopes ?? null,
         expires_at: tokens.expiresIn ? new Date(Date.now() + tokens.expiresIn * 1000).toISOString() : null,
       },
-      { onConflict: "user_id,platform" },
+      // Dedupe per (user, platform, account) so a user can connect multiple accounts
+      // of the same platform, and re-connecting the same account refreshes it in place.
+      { onConflict: "user_id,platform,platform_user_id" },
     );
     if (error) return back("storefailed");
     const res = back("connected");

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { SOCIAL, isSocialPlatform, pkcePair, randomState, signState } from "@/lib/social-oauth";
 import { publicOrigin } from "@/lib/request-origin";
 
@@ -18,6 +19,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ plat
   if (!user) return NextResponse.redirect(new URL("/login", origin));
   if (!cfg.configured()) {
     return NextResponse.redirect(new URL(`/connections?social=${platform}&status=unconfigured`, origin));
+  }
+
+  // Account-cap enforcement (server-side; the UI also disables "Add another" at the cap).
+  // Count this user's existing accounts for the platform and refuse a new connect once at cap.
+  const admin = createAdminClient();
+  const { data: prof } = await admin.from("profiles").select("plan").eq("id", user.id).maybeSingle();
+  const planKey = (prof?.plan as string | null) ?? "free";
+  const { data: planRow } = await admin
+    .from("plans")
+    .select("max_accounts_per_platform")
+    .eq("key", planKey)
+    .maybeSingle();
+  const cap = (planRow?.max_accounts_per_platform as number | null) ?? 1;
+  const { count } = await admin
+    .from("social_connections")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("platform", platform);
+  if ((count ?? 0) >= cap) {
+    return NextResponse.redirect(new URL(`/connections?error=account_limit&social=${platform}`, request.url));
   }
 
   const state = randomState();

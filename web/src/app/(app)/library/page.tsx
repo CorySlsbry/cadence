@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { LibraryGrid, type LibraryItem } from "./library-grid";
+import { LibraryGrid, type LibraryItem, type SocialConn } from "./library-grid";
 
 // Every finished render lives here — in the app, not just a one-time download.
 export const dynamic = "force-dynamic";
@@ -36,10 +36,14 @@ export default async function LibraryPage() {
     .order("created_at", { ascending: false })
     .limit(60);
 
-  // Which social accounts the user has connected — drives the per-card "Post to…" buttons.
-  // Same RPC the Connections page uses; returns rows the client never sees tokens for.
+  // Connected accounts (id + label + platform) power the per-video multi-account publisher.
   const { data: socialRows } = await supabase.rpc("my_social_connections");
-  const connected = ((socialRows ?? []) as { platform: string }[]).map((r) => r.platform);
+  const connections: SocialConn[] = ((socialRows ?? []) as SocialConn[]).map((r) => ({
+    id: r.id,
+    platform: r.platform,
+    username: r.username,
+    label: r.label,
+  }));
 
   const items: LibraryItem[] = [];
   for (const job of (jobs ?? []) as JobRow[]) {
@@ -68,7 +72,7 @@ export default async function LibraryPage() {
         Finished renders live here — stream them, download them, or clear them out. Clips and
         social captions stay on each project&apos;s page.
       </p>
-      <LibraryGrid items={items} connected={connected} />
+      <LibraryGrid items={items} connections={connections} />
     </div>
   );
 }

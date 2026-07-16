@@ -40,6 +40,21 @@ type LookKey = (typeof LOOKS)[number][0];
 // Style tiles live in the public assets bucket → swappable without a deploy.
 const TILE_BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/assets/styles`;
 
+// Publish targets — a user's connected accounts are grouped under these platforms.
+const PLATFORM_ORDER = ["x", "tiktok", "instagram", "facebook", "linkedin", "youtube"] as const;
+const PLATFORM_LABELS: Record<string, string> = {
+  x: "X", tiktok: "TikTok", instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", youtube: "YouTube",
+};
+
+// Length options (seconds → label). Anything above the plan's max_length_sec renders locked.
+const LENGTHS = [
+  ["30", "30s"], ["60", "60s"], ["90", "90s"], ["300", "5m"], ["480", "8m"], ["900", "15m"],
+] as const;
+type LengthKey = (typeof LENGTHS)[number][0];
+
+type SocialConn = { id: string; platform: string; username: string | null; label: string | null };
+type PublishResult = { ok: boolean; url?: string; error?: string; note?: string };
+
 type ElVoice = { voice_id: string; name: string; category: string; preview_url: string | null };
 
 // Encoded voice value for the cast selects: "g:Charon" | "e:<voiceId>:<name>"
@@ -113,7 +128,7 @@ function stageFor(p: number, status: string): string {
   return "Finishing up";
 }
 
-export function FacelessClient() {
+export function FacelessClient({ maxLengthSec }: { maxLengthSec: number }) {
   const supabase = useMemo(() => createClient(), []);
   const [mode, setMode] = useState<"topic" | "script">("topic");
   const [topic, setTopic] = useState("");
@@ -130,7 +145,7 @@ export function FacelessClient() {
   const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
   const [showAvatarStudio, setShowAvatarStudio] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement | null>(null);
-  const [lengthSec, setLengthSec] = useState<"30" | "60" | "90">("60");
+  const [lengthSec, setLengthSec] = useState<LengthKey>("60");
   const [resolution, setResolution] = useState<"1080p" | "4k">("1080p");
   // Default to real AI motion (FastWan i2v on our GPU) — animated scenes are the product's
   // core value; users can switch to "stills" for a faster/cheaper render.
@@ -155,8 +170,11 @@ export function FacelessClient() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [publishBusy, setPublishBusy] = useState<string | null>(null); // platform mid-post
-  const [publishUrls, setPublishUrls] = useState<Record<string, string>>({});
+  // Multi-account publish: connected accounts, the chosen subset, per-account results.
+  const [connections, setConnections] = useState<SocialConn[]>([]);
+  const [selectedConns, setSelectedConns] = useState<Set<string>>(new Set());
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishResults, setPublishResults] = useState<Record<string, PublishResult>>({});
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
@@ -168,6 +186,16 @@ export function FacelessClient() {
   const lastFiredInput = useRef<string>("");
 
   const scenes = Math.max(3, Math.min(Math.round(Number(lengthSec) / 7), 16));
+
+  const connsByPlatform = useMemo(() => {
+    const m: Record<string, SocialConn[]> = {};
+    for (const c of connections) (m[c.platform] ??= []).push(c);
+    return m;
+  }, [connections]);
+  const publishNotes = useMemo(
+    () => [...new Set(Object.values(publishResults).map((r) => r.note).filter((n): n is string => !!n))],
+    [publishResults],
+  );
 
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -195,6 +223,22 @@ export function FacelessClient() {
       .then((d: { characters?: AvatarChar[] }) => setAvatars(d.characters ?? []))
       .catch(() => {});
   }, []);
+
+  // Connected social accounts (id + label + platform) drive the multi-select publisher.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase.rpc("my_social_connections");
+        if (active) setConnections((data ?? []) as SocialConn[]);
+      } catch {
+        /* publisher just stays empty if this fails */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
 
   async function createAvatar(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -239,24 +283,36 @@ export function FacelessClient() {
     fetch(`/api/avatar?id=${id}`, { method: "DELETE" }).catch(() => {});
   }
 
-  async function publishTo(platform: string, label: string) {
-    if (!jobId) return;
-    setPublishBusy(platform);
+  function toggleConn(id: string) {
+    setSelectedConns((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function postToSelected() {
+    if (!jobId || selectedConns.size === 0) return;
+    setPublishBusy(true);
     setPublishMsg(null);
     try {
       const r = await fetch("/api/social/publish", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ platform, jobId, caption: title.slice(0, 280) }),
+        body: JSON.stringify({ connectionIds: [...selectedConns], jobId, caption: title.slice(0, 280) }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "publish failed");
-      if (d.url) setPublishUrls((p) => ({ ...p, [platform]: d.url }));
-      setPublishMsg(d.note ?? `Live on ${label}.`);
+      const map: Record<string, PublishResult> = {};
+      for (const res of (d.results ?? []) as (PublishResult & { connectionId: string })[]) {
+        map[res.connectionId] = { ok: res.ok, url: res.url, error: res.error, note: res.note };
+      }
+      setPublishResults((prev) => ({ ...prev, ...map }));
     } catch (e) {
       setPublishMsg(e instanceof Error ? e.message : "publish failed");
     } finally {
-      setPublishBusy(null);
+      setPublishBusy(false);
     }
   }
 
@@ -774,14 +830,43 @@ export function FacelessClient() {
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Seg label="Length" value={lengthSec}
-              options={[["30", "30s"], ["60", "60s"], ["90", "90s"]] as const}
-              onChange={setLengthSec} />
-            <Seg label="Quality" value={resolution}
-              options={[["1080p", "1080p"], ["4k", "4K Ultra"]] as const}
-              onChange={setResolution} />
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-white/65">
+              Length <span className="text-white/35">— longer videos unlock on higher plans</span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {LENGTHS.map(([val, label]) => {
+                const sec = Number(val);
+                const locked = sec > maxLengthSec;
+                const active = lengthSec === val;
+                const need = sec <= 300 ? "Creator" : "Agency";
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    disabled={locked}
+                    onClick={() => setLengthSec(val)}
+                    aria-pressed={active}
+                    title={locked ? `Unlock ${label} on the ${need} plan` : undefined}
+                    className={`press rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors ${
+                      active
+                        ? "border-[var(--accent)]/60 bg-[var(--accent)]/15 text-white"
+                        : locked
+                          ? "cursor-not-allowed border-white/5 bg-white/[0.02] text-white/25"
+                          : "border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/5 hover:text-white/85"
+                    }`}
+                  >
+                    {label}
+                    {locked && <span className="ml-1 text-[10px] text-[var(--accent)]/70">{need}</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          <Seg label="Quality" value={resolution}
+            options={[["1080p", "1080p"], ["4k", "4K Ultra"]] as const}
+            onChange={setResolution} />
 
           <div>
             <Seg label="Scenes" value={sceneMode}
@@ -876,28 +961,83 @@ export function FacelessClient() {
           </div>
           <div className="mx-auto max-w-[320px]">
             <p className="mb-1.5 text-center text-xs font-medium text-white/55">Post directly to</p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {([["x", "X"], ["tiktok", "TikTok"], ["instagram", "Instagram"], ["facebook", "Facebook"], ["linkedin", "LinkedIn"], ["youtube", "YouTube"]] as const).map(([p, label]) => (
-                <button
-                  key={p}
-                  type="button"
-                  disabled={publishBusy !== null}
-                  onClick={() => publishTo(p, label)}
-                  className={`press rounded-lg border px-2 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${
-                    publishUrls[p]
-                      ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
-                      : "border-white/10 bg-white/[0.03] text-white/80 hover:bg-white/5"
-                  }`}
+            {connections.length === 0 ? (
+              <p className="text-center text-xs text-white/45">
+                <Link href="/connections" className="text-[var(--accent)] hover:underline">Connect an account</Link>{" "}
+                to post straight to your socials.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {PLATFORM_ORDER.filter((p) => connsByPlatform[p]?.length).map((p) => (
+                    <div key={p}>
+                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-white/40">
+                        {PLATFORM_LABELS[p]}
+                      </p>
+                      <div className="space-y-1">
+                        {connsByPlatform[p].map((c) => {
+                          const res = publishResults[c.id];
+                          const checked = selectedConns.has(c.id);
+                          return (
+                            <label
+                              key={c.id}
+                              className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                                res?.ok
+                                  ? "border-emerald-400/40 bg-emerald-400/10"
+                                  : res?.error
+                                    ? "border-red-400/30 bg-red-400/5"
+                                    : checked
+                                      ? "border-[var(--accent)]/50 bg-[var(--accent)]/10"
+                                      : "border-white/10 bg-white/[0.03] hover:bg-white/5"
+                              }`}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleConn(c.id)}
+                                  className="h-4 w-4 shrink-0 accent-[var(--accent)]"
+                                />
+                                <span className="truncate text-white/85">
+                                  @{c.label || c.username || PLATFORM_LABELS[p]}
+                                </span>
+                              </span>
+                              {res?.ok && res.url ? (
+                                <a
+                                  href={res.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="shrink-0 text-xs text-emerald-300 underline-offset-2 hover:underline"
+                                >
+                                  View
+                                </a>
+                              ) : res?.error ? (
+                                <span className="shrink-0 text-xs text-red-300" title={res.error}>Failed</span>
+                              ) : null}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  onClick={postToSelected}
+                  disabled={publishBusy || selectedConns.size === 0}
+                  className="mt-3 w-full"
                 >
-                  {publishBusy === p ? "Posting…" : publishUrls[p] ? `${label} ✓` : label}
-                </button>
-              ))}
-            </div>
-            {Object.entries(publishUrls).map(([p, url]) => (
-              <a key={p} href={url} target="_blank" rel="noreferrer" className="mt-1.5 block text-center text-xs text-[var(--accent)] underline-offset-2 hover:underline">
-                View your {p === "x" ? "X" : p} post
-              </a>
-            ))}
+                  {publishBusy ? "Posting…" : `Post to selected (${selectedConns.size})`}
+                </Button>
+                {publishNotes.length > 0 && (
+                  <div className="mt-1.5 space-y-0.5">
+                    {publishNotes.map((n) => (
+                      <p key={n} className="text-center text-xs text-white/50">{n}</p>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
             {publishMsg && <p className="mt-1.5 text-center text-xs text-white/55">{publishMsg}</p>}
           </div>
         </div>

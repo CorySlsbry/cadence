@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { geminiJson } from "@/lib/gemini";
 import { checkRenderAllowance } from "@/lib/limits";
 import { pokeWorker } from "@/lib/worker";
@@ -31,13 +32,13 @@ const Character = z.object({
 
 const Body = z.object({
   topic: z.string().max(500).optional(),
-  script: z.string().max(8000).optional(),
+  script: z.string().max(20000).optional(),
   voice: z.string().default("Charon"),
   voiceProvider: z.enum(["gemini", "elevenlabs"]).default("gemini"),
   voiceId: z.string().max(64).optional(), // ElevenLabs voice id when provider=elevenlabs
   mode: z.enum(["single", "dialogue"]).default("single"),
   characters: z.array(Character).length(2).optional(),
-  lengthSec: z.number().min(20).max(180).default(60),
+  lengthSec: z.number().min(20).max(900).default(60),
   style: z.enum(["cinematic", "cinematic_film", "clean_ugc"]).default("cinematic"),
   sceneStyle: z.string().max(24).default("cinematic"),
   sceneDirection: z.string().max(400).default(""),
@@ -172,11 +173,28 @@ export async function POST(req: Request) {
 
   // Same gate as /api/render — faceless burns one token per AI scene in the worker.
   const { data: profile } = await supabase
-    .from("profiles").select("tokens").eq("id", user.id).single();
+    .from("profiles").select("tokens, plan").eq("id", user.id).single();
   if (((profile?.tokens as number) ?? 0) <= 0) {
     return NextResponse.json(
       { error: "You're out of tokens. Top up or upgrade on the Pricing page (tap your token badge)." },
       { status: 402 },
+    );
+  }
+
+  // Length gate — the client is a declaration, not permission. Enforce the plan's
+  // max video length server-side and fail closed on an over-cap request.
+  const planKey = (profile?.plan as string | null) ?? "free";
+  const admin = createAdminClient();
+  const { data: planCap } = await admin
+    .from("plans")
+    .select("max_length_sec")
+    .eq("key", planKey)
+    .maybeSingle();
+  const maxLengthSec = (planCap?.max_length_sec as number | null) ?? 90;
+  if (body.lengthSec > maxLengthSec) {
+    return NextResponse.json(
+      { error: `Your plan tops out at ${maxLengthSec}s videos. Upgrade to make longer videos.` },
+      { status: 403 },
     );
   }
 
@@ -325,6 +343,7 @@ Return STRICT JSON: {"title": "scroll-stopping title (max 70 chars)", "body": "t
         faceless: {
           voice: voiceLabel,
           topic: title,
+          length_sec: body.lengthSec,
           scene_style: SCENE_STYLES.has(body.sceneStyle) ? body.sceneStyle : "cinematic",
           scene_direction: sceneDirection,
           animate: body.animate,

@@ -13,7 +13,7 @@ export type Tier = {
   credits: string;
   blurb: string;
   features: string[];
-  plan: "base" | "creator" | null;
+  plan: "base" | "creator" | "agency" | null;
   highlight: boolean;
 };
 

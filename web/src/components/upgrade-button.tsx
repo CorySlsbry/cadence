@@ -12,7 +12,7 @@ export function UpgradeButton({
   className,
   children,
 }: {
-  plan: "base" | "creator";
+  plan: "base" | "creator" | "agency";
   className?: string;
   children: React.ReactNode;
 }) {

@@ -14,7 +14,7 @@ import { ensurePlanPrice, ensurePackPrice, type PlanRow, type PackRow } from "@/
  */
 export async function createCheckoutSessionFor(
   user: User,
-  plan: "base" | "creator",
+  plan: "base" | "creator" | "agency",
   origin: string,
   embedded = false,
 ): Promise<Stripe.Checkout.Session> {

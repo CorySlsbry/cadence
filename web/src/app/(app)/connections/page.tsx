@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { SOCIAL, SOCIAL_PLATFORMS } from "@/lib/social-oauth";
 import { ConnectionsPanel, type ConnStatus } from "./connections-panel";
 import { SocialConnect, type SocialStatus } from "./social-connect";
@@ -15,15 +16,28 @@ export default async function ConnectionsPage({
   const supabase = await createClient();
   const { data: rows } = await supabase.rpc("my_connections");
   const { data: socialRows } = await supabase.rpc("my_social_connections");
-  const { data: profile } = await supabase.from("profiles").select("blotato_api_key_enc").maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("plan, blotato_api_key_enc").maybeSingle();
 
   const statuses: Record<string, ConnStatus> = {};
   for (const r of (rows ?? []) as ConnStatus[]) statuses[r.provider] = r;
-  const social: Record<string, SocialStatus> = {};
-  for (const r of (socialRows ?? []) as SocialStatus[]) social[r.platform] = r;
+  // Multiple accounts per platform now — group the RPC rows by platform.
+  const social: Record<string, SocialStatus[]> = {};
+  for (const r of (socialRows ?? []) as SocialStatus[]) (social[r.platform] ??= []).push(r);
   const configured = Object.fromEntries(SOCIAL_PLATFORMS.map((p) => [p, SOCIAL[p].configured()]));
+
+  // Per-platform account cap comes from the user's plan (plans.max_accounts_per_platform).
+  const planKey = (profile?.plan as string | null) ?? "free";
+  const admin = createAdminClient();
+  const { data: planRow } = await admin
+    .from("plans")
+    .select("max_accounts_per_platform")
+    .eq("key", planKey)
+    .maybeSingle();
+  const maxAccountsPerPlatform = (planRow?.max_accounts_per_platform as number | null) ?? 1;
+
   const noticePlatform = typeof sp.social === "string" ? sp.social : null;
   const noticeStatus = typeof sp.status === "string" ? sp.status : null;
+  const accountLimit = sp.error === "account_limit";
 
   return (
     <div className="space-y-10">
@@ -39,6 +53,8 @@ export default async function ConnectionsPage({
       <SocialConnect
         social={social}
         configured={configured}
+        maxAccountsPerPlatform={maxAccountsPerPlatform}
+        accountLimit={accountLimit}
         notice={noticePlatform && noticeStatus ? { platform: noticePlatform, status: noticeStatus } : null}
       />
     </div>
