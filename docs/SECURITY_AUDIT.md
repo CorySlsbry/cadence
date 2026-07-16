@@ -22,3 +22,10 @@ Ran enterprise-security-audit (Supabase linter + live black-box probes + code re
 - **SPA security headers** (HSTS/XFO DENY/CSP frame-ancestors/nosniff/Referrer/Permissions) — in `next.config.ts` + `proxy.ts` (committed). The header revision (cadence-web-00081/00082) 500s on boot (env identical to good rev → a code/runtime boot issue, undiagnosed); deferred to a safe follow-up. Site remains healthy on cadence-web-00079-lvs.
 **⚠️ Operational trap found:** cadence-web **traffic is PINNED to 00079-lvs** (from the earlier outage rollback). `gcloud run deploy` creates new revisions at 0% traffic — future web deploys must EXPLICITLY route traffic to the new (verified-good) revision, or they silently don't go live. (Routing --to-latest 500'd on the broken header rev → rolled back.)
 **Remaining for full 2FA (the chosen scope):** app-side TOTP enrollment UI + aal2 requirement on /admin — a focused build (not done this session).
+
+### 2026-07-16 (cont.) — audit findings FIXED + DEPLOYED
+- 🔴 cross-tenant likeness access (avatar) → owner-scoped character + consent (worker `_render_avatar`). LIVE cadence-worker-00055-jgw.
+- 🟠 cross-tenant audio via `music_path` → owner-folder guard (worker `_process`). LIVE.
+- 🟡 SSRF on gemini `imageUrl` → private/metadata-IP rejection, https+443, no redirects (`lib/gemini.ts`). LIVE cadence-web-00085-vr6.
+- 🟡 open redirect (`?next=`) → same-origin guard (`auth-form.tsx`). LIVE.
+- Session 24h + MFA + leaked-password: confirmed live (2026-07-03). Commits 9fbbbc1 + follow-ups. Tracked lower-pri (docs above): timing-safe operator compares, rate-limit outliers/analyze+blueprint, affiliate-payout retry edge.
