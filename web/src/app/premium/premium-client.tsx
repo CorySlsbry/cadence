@@ -223,7 +223,7 @@ export function PremiumClient({ tiers, packs }: { tiers: Tier[]; packs: Pack[] }
             <h2 className="text-3xl font-extrabold tracking-tight md:text-4xl">Pricing that scales with your output</h2>
             <p className="mt-4 text-white/55">Every plan includes <span className="text-white/80">unlimited clean edits</span>. Tokens power AI generation — and your balance is a hard cap, so there are no surprises.</p>
           </div>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {tiers.map((t, i) => (
               <div
                 key={t.name}
