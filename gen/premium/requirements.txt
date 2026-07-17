@@ -1,0 +1,13 @@
+# torch comes from the base image (pytorch/pytorch:2.8.0-cuda12.8 — sm_120/Blackwell);
+# keep it out of this file so pip can never swap in a different-CUDA wheel.
+diffusers==0.38.0
+transformers>=4.57
+accelerate>=1.2.0
+peft>=0.17          # diffusers LoRA loading (Lightning high/low-noise adapters)
+sentencepiece
+protobuf
+ftfy                # soft dep of diffusers' Wan prompt cleaner
+pillow>=10.4
+imageio[ffmpeg]>=2.36   # export_to_video
+numpy>=2.0.2
+google-cloud-storage>=2.18

@@ -1,0 +1,53 @@
+# One-time: stage Wan 2.2 I2V-A14B (official Diffusers layout, Apache-2.0) + the lightx2v
+# Lightning 4-step rank-64 LoRAs into GCS for the PREMIUM motion lane (RTX PRO 6000 Blackwell
+# Cloud Run Job). ~129 GB total — Cloud Build's network does in ~minutes what a home line can't.
+# Layout matches what WanImageToVideoPipeline.from_pretrained expects:
+#   gs://${_BUCKET}/wan22-a14b/Wan2.2-I2V-A14B-Diffusers/{model_index.json,transformer,transformer_2,
+#     text_encoder,tokenizer,vae,scheduler}
+#   gs://${_BUCKET}/wan22-a14b/loras/wan22-lightning-i2v-seko-v1/{high,low}_noise_model.safetensors
+# NOTE: the two transformers ship as FP32 shards (57 GB each) — the service MUST load with
+# torch_dtype=bfloat16 (fp32-resident would need ~126 GB and OOM the 96 GB card).
+steps:
+  - name: "python:3.11-slim"
+    id: download
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        pip install -q "huggingface_hub[hf_transfer]==0.36.0"
+        export HF_HUB_ENABLE_HF_TRANSFER=1
+        python - <<'PY'
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+            local_dir="/workspace/models/wan22-a14b/Wan2.2-I2V-A14B-Diffusers",
+            ignore_patterns=["assets/*", "examples/*", "*.md", ".gitattributes"],
+        )
+        print("wan22-a14b diffusers snapshot done", flush=True)
+        snapshot_download(
+            "lightx2v/Wan2.2-Lightning",
+            local_dir="/workspace/lightning",
+            allow_patterns=["Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/*.safetensors"],
+        )
+        print("lightning loras done", flush=True)
+        PY
+        mkdir -p /workspace/models/wan22-a14b/loras/wan22-lightning-i2v-seko-v1
+        cp /workspace/lightning/Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/*.safetensors \
+           /workspace/models/wan22-a14b/loras/wan22-lightning-i2v-seko-v1/
+        du -sh /workspace/models/wan22-a14b/* /workspace/models/wan22-a14b/Wan2.2-I2V-A14B-Diffusers/*
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: upload
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        gcloud storage rsync -r /workspace/models/wan22-a14b gs://${_BUCKET}/wan22-a14b
+        echo "== staged ==" && gcloud storage du -s gs://${_BUCKET}/wan22-a14b
+substitutions:
+  _BUCKET: cadence-gen-models-uscentral1
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 300
+timeout: 7200s
