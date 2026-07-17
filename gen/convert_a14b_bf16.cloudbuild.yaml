@@ -1,0 +1,76 @@
+# One-time: cast the A14B transformers' FP32 shards to BF16 at rest (57 GB -> 28.6 GB each).
+# The premium job loads bf16 anyway — shipping fp32 bytes just doubles the (bandwidth-capped)
+# startup download. Shard-by-shard (download -> cast -> upload -> delete) so 100 GB disk suffices.
+# Output tree = a complete from_pretrained-able copy at .../Wan2.2-I2V-A14B-Diffusers-bf16/
+# (small components copied verbatim; text_encoder is already bf16 on disk).
+steps:
+  - name: "python:3.11-slim"
+    id: convert
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        pip install -q torch --index-url https://download.pytorch.org/whl/cpu
+        pip install -q safetensors google-cloud-storage
+        python - <<'PY'
+        import json, os, tempfile
+        import torch
+        from google.cloud import storage
+        from safetensors.torch import load_file, save_file
+
+        BUCKET = "${_BUCKET}"
+        SRC = "wan22-a14b/Wan2.2-I2V-A14B-Diffusers"
+        DST = "wan22-a14b/Wan2.2-I2V-A14B-Diffusers-bf16"
+        client = storage.Client()
+        bucket = client.bucket(BUCKET)
+
+        def copy_verbatim(prefix):
+            for b in client.list_blobs(BUCKET, prefix=f"{SRC}/{prefix}"):
+                if b.name.endswith("/") or "/.cache/" in b.name:
+                    continue
+                dst = b.name.replace(SRC, DST, 1)
+                bucket.copy_blob(b, bucket, dst)
+                print("copied", dst, flush=True)
+
+        # Small/already-right-dtype components: verbatim copies keep the tree loadable as one dir.
+        for p in ("model_index.json", "scheduler/", "tokenizer/", "text_encoder/", "vae/"):
+            copy_verbatim(p)
+
+        for sub in ("transformer", "transformer_2"):
+            blobs = [b for b in client.list_blobs(BUCKET, prefix=f"{SRC}/{sub}/")
+                     if not b.name.endswith("/") and "/.cache/" not in b.name]
+            index_blob = None
+            total = 0
+            for b in blobs:
+                name = os.path.basename(b.name)
+                if name.endswith(".safetensors"):
+                    with tempfile.TemporaryDirectory() as td:
+                        src_f = os.path.join(td, name)
+                        b.download_to_filename(src_f)
+                        sd = load_file(src_f)
+                        sd = {k: (v.to(torch.bfloat16) if v.dtype == torch.float32 else v)
+                              for k, v in sd.items()}
+                        out_f = os.path.join(td, "bf16_" + name)
+                        save_file(sd, out_f)
+                        total += os.path.getsize(out_f)
+                        bucket.blob(f"{DST}/{sub}/{name}").upload_from_filename(out_f)
+                    print(f"cast {sub}/{name}", flush=True)
+                elif name == "diffusion_pytorch_model.safetensors.index.json":
+                    index_blob = b
+                else:  # config.json etc.
+                    bucket.copy_blob(b, bucket, b.name.replace(SRC, DST, 1))
+            if index_blob is not None:
+                idx = json.loads(index_blob.download_as_bytes())
+                idx.setdefault("metadata", {})["total_size"] = total
+                bucket.blob(f"{DST}/{sub}/diffusion_pytorch_model.safetensors.index.json") \
+                      .upload_from_string(json.dumps(idx), content_type="application/json")
+                print(f"index updated {sub} total_size={total}", flush=True)
+        print("BF16 CONVERSION DONE", flush=True)
+        PY
+substitutions:
+  _BUCKET: cadence-gen-models-uscentral1
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100
+timeout: 7200s
