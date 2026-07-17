@@ -24,15 +24,25 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
 import traceback
 
-MODELS_DIR = os.environ.get(
-    "A14B_MODELS_DIR", "/models/wan22-a14b/Wan2.2-I2V-A14B-Diffusers")
-LORA_DIR = os.environ.get(
-    "A14B_LORA_DIR", "/models/wan22-a14b/loras/wan22-lightning-i2v-seko-v1")
+# Weights come from GCS via STAGED PARALLEL DOWNLOAD, not a FUSE mount: safetensors
+# mmap random reads defeat gcsfuse readahead (measured 2026-07-17: ~20 min per 4.7 GB
+# shard ≈ a 7-hour load for 126 GB — the first execution timed out at 17% of one
+# transformer). Same-region transfer_manager pulls at GB/s instead, and staging one
+# component at a time keeps peak tmpfs (= RAM) at ~57 GB + transient, inside 80 Gi.
+WEIGHTS_URI = os.environ.get(
+    "A14B_WEIGHTS_URI",
+    "gs://cadence-gen-models-uscentral1/wan22-a14b/Wan2.2-I2V-A14B-Diffusers")
+LORA_URI = os.environ.get(
+    "A14B_LORA_URI",
+    "gs://cadence-gen-models-uscentral1/wan22-a14b/loras/wan22-lightning-i2v-seko-v1")
+STAGE_DIR = os.environ.get("A14B_STAGE_DIR", "/tmp/a14b")
+DL_WORKERS = int(os.environ.get("A14B_DL_WORKERS", "16"))
 STEPS = int(os.environ.get("A14B_STEPS", "4"))
 FRAMES = int(os.environ.get("A14B_FRAMES", "81"))
 FPS = int(os.environ.get("A14B_FPS", "16"))
@@ -47,35 +57,110 @@ def _split_gs(uri: str) -> tuple[str, str]:
     return bucket, prefix.rstrip("/")
 
 
+def _download_prefix(gs_uri: str, dest: str) -> None:
+    """Parallel-download every blob under gs_uri into dest (flattened to the prefix)."""
+    from google.cloud import storage
+    from google.cloud.storage import transfer_manager
+
+    bucket_name, prefix = _split_gs(gs_uri)
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blobs = [b for b in client.list_blobs(bucket_name, prefix=prefix + "/")
+             if not b.name.endswith("/") and "/.cache/" not in b.name]
+    if not blobs:
+        raise RuntimeError(f"no blobs under {gs_uri}")
+    names = [b.name for b in blobs]
+    t0 = time.time()
+    # blob_name_prefix strips the GCS prefix so files land at dest/<relative-name>.
+    results = transfer_manager.download_many_to_path(
+        bucket, names, destination_directory=dest, blob_name_prefix=prefix + "/",
+        max_workers=DL_WORKERS, worker_type=transfer_manager.THREAD)
+    for name, res in zip(names, results):
+        if isinstance(res, Exception):
+            raise RuntimeError(f"download failed for {name}: {res!r}")
+    gb = sum(b.size or 0 for b in blobs) / 1e9
+    dt = time.time() - t0
+    print(f"[a14b] downloaded {gb:.1f} GB ({len(names)} files) in {dt:.0f}s "
+          f"({gb/max(dt,1e-9):.2f} GB/s)", flush=True)
+
+
+def _stage(subdir: str) -> str:
+    """Download one model component under STAGE_DIR and return its local path."""
+    local = os.path.join(STAGE_DIR, subdir)
+    _download_prefix(f"{WEIGHTS_URI}/{subdir}", local)
+    return local
+
+
 def _load_pipeline():
     """A14B two-expert MoE + Lightning 4-step LoRAs, fused, bf16-resident.
 
     The repo ships the transformers as FP32 shards (57 GB each): torch_dtype=bfloat16
-    is MANDATORY (fp32-resident ~126 GB would OOM the 96 GB card). Fuse-then-unload
+    at load is MANDATORY (fp32-resident ~126 GB would OOM the 96 GB card). Components
+    are staged→loaded→DELETED one at a time so tmpfs (RAM-backed) peaks at one
+    transformer (~57 GB), not the whole repo (126 GB > 80 Gi). Fuse-then-unload
     removes per-step LoRA overhead; flow_shift=5.0 is the Lightning setting (repo
     default 3.0) — with boundary_ratio 0.9 the 4 steps split exactly 2 high / 2 low.
     """
     import torch
-    from diffusers import UniPCMultistepScheduler, WanImageToVideoPipeline
+    from diffusers import (AutoencoderKLWan, UniPCMultistepScheduler,
+                           WanImageToVideoPipeline, WanTransformer3DModel)
+    from transformers import T5TokenizerFast, UMT5EncoderModel
 
-    t0 = time.time()
-    pipe = WanImageToVideoPipeline.from_pretrained(MODELS_DIR, torch_dtype=torch.bfloat16)
-    print(f"[a14b] pipeline loaded in {time.time()-t0:.0f}s", flush=True)
+    t_all = time.time()
+    os.makedirs(STAGE_DIR, exist_ok=True)
 
-    pipe.load_lora_weights(LORA_DIR, weight_name="high_noise_model.safetensors",
+    def load_component(subdir: str, loader):
+        t0 = time.time()
+        local = _stage(subdir)
+        model = loader(local)
+        shutil.rmtree(local, ignore_errors=True)  # free tmpfs (RAM) before the next one
+        print(f"[a14b] {subdir} staged+loaded in {time.time()-t0:.0f}s", flush=True)
+        return model
+
+    # device_map="cuda" streams tensors straight to VRAM as shards are read — WITHOUT it
+    # the model would materialize on CPU (28.6 GB bf16) while its 57 GB of fp32 shards
+    # still sit in RAM-backed tmpfs, busting the 80 Gi limit.
+    text_encoder = load_component(
+        "text_encoder",
+        lambda p: UMT5EncoderModel.from_pretrained(
+            p, torch_dtype=torch.bfloat16, device_map="cuda"))
+    transformer = load_component(
+        "transformer",
+        lambda p: WanTransformer3DModel.from_pretrained(
+            p, torch_dtype=torch.bfloat16, device_map="cuda"))
+    transformer_2 = load_component(
+        "transformer_2",
+        lambda p: WanTransformer3DModel.from_pretrained(
+            p, torch_dtype=torch.bfloat16, device_map="cuda"))
+    vae = load_component(
+        "vae",
+        lambda p: AutoencoderKLWan.from_pretrained(p, torch_dtype=torch.float32).to("cuda"))
+    tokenizer = T5TokenizerFast.from_pretrained(_stage("tokenizer"))
+    scheduler = UniPCMultistepScheduler.from_pretrained(_stage("scheduler"))
+    scheduler = UniPCMultistepScheduler.from_config(scheduler.config, flow_shift=5.0)
+
+    pipe = WanImageToVideoPipeline(
+        transformer=transformer, transformer_2=transformer_2, text_encoder=text_encoder,
+        tokenizer=tokenizer, vae=vae, scheduler=scheduler,
+        image_encoder=None, image_processor=None,
+        boundary_ratio=0.9,  # repo model_index.json: high-noise expert for t >= 900
+    )
+
+    lora_local = os.path.join(STAGE_DIR, "loras")
+    _download_prefix(LORA_URI, lora_local)
+    pipe.load_lora_weights(lora_local, weight_name="high_noise_model.safetensors",
                            adapter_name="lx_high")
-    pipe.load_lora_weights(LORA_DIR, weight_name="low_noise_model.safetensors",
+    pipe.load_lora_weights(lora_local, weight_name="low_noise_model.safetensors",
                            adapter_name="lx_low", load_into_transformer_2=True)
     pipe.set_adapters(["lx_high", "lx_low"], adapter_weights=[1.0, 1.0])
     pipe.fuse_lora(components=["transformer"], adapter_names=["lx_high"], lora_scale=1.0)
     pipe.fuse_lora(components=["transformer_2"], adapter_names=["lx_low"], lora_scale=1.0)
     pipe.unload_lora_weights()
+    shutil.rmtree(lora_local, ignore_errors=True)
     print("[a14b] lightning loras fused", flush=True)
 
-    pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config, flow_shift=5.0)
-    pipe.to("cuda")
     pipe.vae.enable_tiling()  # decode-peak seatbelt at 81f
-    print(f"[a14b] ready on cuda in {time.time()-t0:.0f}s total", flush=True)
+    print(f"[a14b] ready on cuda in {time.time()-t_all:.0f}s total", flush=True)
     return pipe
 
 
