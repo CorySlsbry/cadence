@@ -557,6 +557,7 @@ class Worker:
         contextual b-roll engine) stitched into a full-duration visual track + karaoke
         captions + optional hook card + ducked music. Returns (RenderResult, edl) — the
         edl is a synthetic full-keep EDL so social captions/hooks/repurpose work as usual."""
+        from cadence.ffmpeg.builder import build_color_grade
         from cadence.ffmpeg.probe import probe_media
         from cadence.matte.replace import build_background_video
         from cadence.models import (
@@ -619,6 +620,10 @@ class Worker:
             style_override=style_override,
             direction=scene_direction,
             context_topic=topic_title,
+            # Faceless is the "ONE continuous film" surface: opt into world-ref + last-frame
+            # img2img chaining (no-op unless the generator is FLUX.2/selfhost). Other b-roll
+            # call sites leave this off, so their cache/token path is unchanged.
+            chain_cohesion=True,
         )
         if not inserts:
             raise RuntimeError("faceless: scene generation produced no images")
@@ -743,7 +748,27 @@ class Worker:
             with open(hook_path, "w", encoding="utf-8") as fh:
                 fh.write(build_hook_studio(ctrl.hook, width=w, height=h))
             vf_parts.append(f"subtitles='{hook_path}'")
-        vchain = "[0:v]" + (",".join(vf_parts) + "," if vf_parts else "") + "format=yuv420p[outv]"
+        # COHESION: ONE consistent cinematic grade + subtle film grain across EVERY scene, applied
+        # to [0:v] BEFORE captions — the same "shared film stock" trick the talking-head finish uses
+        # (see synthesis/renderer.py). A single grade over the whole scene track ties the independent
+        # AI images together into one film; the grain unifies their textures. Subtle by design.
+        grade = ColorGrade(
+            brightness=0.0, contrast=1.06, saturation=1.08, gamma=0.98,
+            temperature=0.04, shadow_balance=-0.03,
+            grain=float(os.environ.get("CADENCE_FACELESS_GRAIN", "8")),
+        )
+        graded = build_color_grade(
+            "0:v", "vg", brightness=grade.brightness, contrast=grade.contrast,
+            saturation=grade.saturation, gamma=grade.gamma,
+            temperature=grade.temperature, shadow_balance=grade.shadow_balance,
+        )
+        grain_amt = int(round(min(grade.grain, 60)))
+        grain_node = (f"[vg]noise=alls={grain_amt}:allf=t+u[vgr]" if grain_amt > 0
+                      else "[vg]null[vgr]")
+        vchain = (
+            f"{graded};{grain_node};"
+            + "[vgr]" + (",".join(vf_parts) + "," if vf_parts else "") + "format=yuv420p[outv]"
+        )
 
         if music_path:
             vol = max(0.05, min(float(ctrl.music_volume), 0.5))

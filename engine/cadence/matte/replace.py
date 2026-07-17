@@ -253,37 +253,71 @@ def build_background_video_mixed(
     segs = _background_segments([ins for ins, _ in items], duration)
     if not segs:
         raise ValueError("build_background_video_mixed: no usable segments")
+    # COHESION: join the scenes with real crossfades (xfade) instead of a hard concat, so the
+    # background reads as ONE continuous film. xfade OVERLAPS consecutive segments by `xf`, which
+    # would shrink the timeline by (n-1)*xf and desync it from the narration — so each non-last
+    # segment is played `xf` LONGER (the overlap is "given back"), keeping the finished background
+    # exactly `duration` long. Offsets are the RUNNING (overlap-subtracted) segment durations.
+    xf = 0.4  # crossfade duration (s)
+    n = len(segs)
+    # Effective per-input playback: extend every non-last input by `xf` so the crossfades are
+    # absorbed and the total still equals `duration`; guarantee the last input is >= xf so the
+    # final fade-in has enough footage (any excess is clipped by the caller's -t duration).
+    eff: list[float] = []
+    for i, (_img, seg_dur) in enumerate(segs):
+        if n == 1:
+            eff.append(round(seg_dur, 3))
+        elif i < n - 1:
+            eff.append(round(seg_dur + xf, 3))
+        else:
+            eff.append(round(max(seg_dur, xf), 3))
     args: list[str] = ["-y"]
     chains: list[str] = []
-    labels: list[str] = []
-    for i, (img_path, seg_dur) in enumerate(segs):
+    for i, (img_path, _seg_dur) in enumerate(segs):
+        ed = eff[i]
         clip = by_image.get(img_path)
         if clip:
-            # Real motion: loop the clip to cover its window, normalize geometry + fps.
-            args += ["-stream_loop", "-1", "-t", f"{seg_dur:.3f}", "-i", clip]
+            # Real motion: loop the clip to cover its (extended) window, normalize geometry + fps.
+            args += ["-stream_loop", "-1", "-t", f"{ed:.3f}", "-i", clip]
             chains.append(
                 f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-                f"crop={width}:{height},setsar=1,fps={fps},trim=0:{seg_dur:.3f},"
-                f"setpts=PTS-STARTPTS[v{i}]"
+                f"crop={width}:{height},setsar=1,fps={fps},trim=0:{ed:.3f},"
+                f"setpts=PTS-STARTPTS,format=yuv420p,settb=AVTB[v{i}]"
             )
         else:
-            args += ["-loop", "1", "-t", f"{seg_dur:.3f}", "-i", img_path]
-            ramp = f"min(t/{max(seg_dur, 1.0):.2f}\\,1)"
+            args += ["-loop", "1", "-t", f"{ed:.3f}", "-i", img_path]
+            ramp = f"min(t/{max(ed, 1.0):.2f}\\,1)"
             factor = f"(1+{zoom - 1.0:.4f}*{ramp})"
             sw = f"trunc(({width}*{factor})/2)*2"
             chains.append(
                 f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
                 f"crop={width}:{height},setsar=1,fps={fps},"
-                f"scale=w={sw}:h=-2:eval=frame,crop={width}:{height}:(iw-{width})/2:(ih-{height})/2[v{i}]"
+                f"scale=w={sw}:h=-2:eval=frame,crop={width}:{height}:(iw-{width})/2:(ih-{height})/2,"
+                f"setpts=PTS-STARTPTS,format=yuv420p,settb=AVTB[v{i}]"
             )
-        labels.append(f"[v{i}]")
-    graph = ";".join(chains) + ";" + "".join(labels) + f"concat=n={len(segs)}:v=1:a=0[outv]"
+    if n == 1:
+        graph = chains[0].replace("[v0]", "[outv]")
+    else:
+        # Chain the crossfades; each offset = accumulated (overlap-subtracted) length so far - xf.
+        parts = list(chains)
+        prev = "v0"
+        running = eff[0]
+        for i in range(1, n):
+            offset = max(0.0, running - xf)
+            out_lbl = "outv" if i == n - 1 else f"xf{i}"
+            parts.append(
+                f"[{prev}][v{i}]xfade=transition=fade:duration={xf}:offset={offset:.4f}[{out_lbl}]"
+            )
+            running = round(running + eff[i] - xf, 4)
+            prev = out_lbl
+        graph = ";".join(parts)
+    # NOTE: this background carries NO audio (concat/xfade v-only), so no acrossfade is needed.
     args += [
         "-filter_complex", graph, "-map", "[outv]",
         "-c:v", "libx264", "-preset", "medium", "-crf", str(crf),
         "-pix_fmt", "yuv420p", "-r", str(fps), out,
     ]
-    ff.run(args, timeout=7200)  # long (many-scene) videos concat far more inputs
+    ff.run(args, timeout=7200)  # long (many-scene) videos crossfade far more inputs
     return out
 
 

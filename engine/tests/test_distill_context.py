@@ -13,7 +13,8 @@ class FakeGen:
     def __init__(self):
         self.prompts: list[str] = []
 
-    def generate(self, prompt, aspect="9x16", style_refs=None):
+    def generate(self, prompt, aspect="9x16", style_refs=None, seed=None,
+                 init_image=None, ref_image=None):
         self.prompts.append(prompt)
         # 1x1 PNG
         import base64

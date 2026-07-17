@@ -195,6 +195,8 @@ def build_ai_broll(
     style_override: str | None = None,
     direction: str = "",
     context_topic: str = "",
+    world_ref: bytes | None = None,
+    chain_cohesion: bool = False,
 ) -> list[BrollInsert]:
     """Generate a contextual, photoreal b-roll image for each cutaway window.
 
@@ -229,10 +231,35 @@ def build_ai_broll(
         "setting, colour palette, film stock, and lighting throughout — as if these are frames "
         "from ONE continuous film, not separate images"
     )
+    # Image-level cohesion (near-zero cost, no new model): pass a persistent WORLD reference image
+    # to every scene (the strongest anchor) plus the PREVIOUS scene as an img2img init, so each
+    # frame visually continues the last. OPT-IN via chain_cohesion (only the faceless "one film"
+    # path sets it) AND only when the generator advertises support (selfhost/FLUX.2). Off, this is
+    # byte-identical to today — so talking-head cutaways / dynamic-BG keep their asset-library cache
+    # hits and unchanged token/$ path.
+    chain_enabled = chain_cohesion and getattr(generator, "supports_image_conditioning", False)
+    world_ref_bytes: bytes | None = world_ref  # supplied anchor, else bootstrapped from scene 0
+    prev_frame_bytes: bytes | None = None       # previous scene image (init/continuity chain)
+    chain_len = 0
+    chain_max = max(1, int(os.environ.get("CADENCE_CHAIN_MAX", "8")))  # drift cap: periodic reset
+    # Section boundaries the background planner marks (a word starting after a real speech pause) —
+    # the previous-frame chain restarts here so drift can't accumulate across a long video. Mirrors
+    # plan_background_windows' boundary detection so the resets land on the same scene starts.
+    section_starts: set[float] = set()
+    if chain_enabled:
+        _prev_end: float | None = None
+        for (_w, _s, _e) in (words_out or []):
+            if _prev_end is not None and (_s - _prev_end) > 0.4:
+                section_starts.add(round(float(_s), 3))
+            _prev_end = _e
     prev_scenes: list[str] = []
     inserts: list[BrollInsert] = []
     for idx, (start, end, motion) in enumerate(windows):
         window_text = raw_text_for_window(words_out, start, end)
+        # Restart the continuity chain at a section boundary (the world anchor still carries over).
+        if chain_enabled and idx > 0 and round(float(start), 3) in section_starts:
+            prev_frame_bytes = None
+            chain_len = 0
         # Factual-image guardrail (pre-step): a guarded term in this window → use the real
         # curated screenshot, skip the model. 0 tokens (charging lives inside generate()).
         if factual_assets:
@@ -249,6 +276,10 @@ def build_ai_broll(
                                                motion=KenBurns.ZOOM_IN, source="factual"))
                     print(f"[broll] factual guardrail: '{fa.key}' -> "
                           f"{os.path.basename(path)} @ {start:.1f}-{end:.1f}s", flush=True)
+                    # A curated real screenshot is a hard cut, not a generated film frame — break
+                    # the continuity chain so the next generated scene re-anchors on the world ref.
+                    prev_frame_bytes = None
+                    chain_len = 0
                     continue
                 except Exception as exc:  # noqa: BLE001 - unreadable asset → fall through to AI gen
                     print(f"[broll] factual asset unreadable ({fa.key}): {exc!r} -> AI fallback",
@@ -266,8 +297,16 @@ def build_ai_broll(
             prompt = build_ai_prompt_scene(topic, caption, cine=cine, style_override=style_override, world=world)
         if direction:
             prompt = f"{prompt} Creator's scene direction (follow it): {direction}"
+        # Attach cohesion refs only when the generator supports them — otherwise this is the exact
+        # call as before (no extra kwargs → byte-identical for Imagen/Ideogram/stub).
+        gen_kwargs: dict = {"aspect": "9x16", "style_refs": style_refs, "seed": video_seed}
+        if chain_enabled:
+            if world_ref_bytes is not None:
+                gen_kwargs["ref_image"] = world_ref_bytes    # persistent world/style anchor
+            if prev_frame_bytes is not None:
+                gen_kwargs["init_image"] = prev_frame_bytes   # previous scene → continuity
         try:
-            res = generator.generate(prompt, aspect="9x16", style_refs=style_refs, seed=video_seed)
+            res = generator.generate(prompt, **gen_kwargs)
         except BudgetExceeded:
             break  # budget or persistent rate-limit — keep the cutaways generated so far
         except Exception as exc:  # noqa: BLE001 - a one-off failure (e.g. safety filter) skips this window
@@ -278,4 +317,14 @@ def build_ai_broll(
             overlay_text=overlay_text, width=width, height=height,
         )
         inserts.append(BrollInsert(image_path=path, start=start, end=end, motion=motion))
+        # Bootstrap the world anchor from scene 0, then feed THIS scene forward as the next scene's
+        # continuity init — with a periodic hard reset so img2img drift can never run away.
+        if chain_enabled:
+            if world_ref_bytes is None:
+                world_ref_bytes = res.image_bytes
+            prev_frame_bytes = res.image_bytes
+            chain_len += 1
+            if chain_len >= chain_max:
+                prev_frame_bytes = None
+                chain_len = 0
     return inserts

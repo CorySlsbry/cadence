@@ -23,7 +23,8 @@ class _CaptureGen:
         self.prompts: list[str] = []
         self._png = _png()
 
-    def generate(self, prompt, aspect="9x16", style_refs=None):
+    def generate(self, prompt, aspect="9x16", style_refs=None, seed=None,
+                 init_image=None, ref_image=None):
         self.prompts.append(prompt)
         gen = self
 

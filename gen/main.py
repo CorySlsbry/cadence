@@ -138,20 +138,38 @@ class ImageReq(BaseModel):
     height: int = 1344
     steps: int = 4
     seed: int | None = None
+    # Optional visual-cohesion conditioning (both base64 PNG/JPEG). FLUX.2-klein is natively
+    # multi-reference, so these steer the render WITHOUT a second model or extra cost:
+    #   ref_image_b64  — a persistent WORLD/style anchor reused across every scene in a video.
+    #   init_image_b64 — the PREVIOUS scene, for frame-to-frame continuity (img2img chaining).
+    # Absent both, generation is byte-identical to the pure text-to-image path.
+    init_image_b64: str | None = None
+    ref_image_b64: str | None = None
 
 
 @app.post("/image")
 def image(req: ImageReq, x_gen_token: str | None = Header(default=None)):
     _auth(x_gen_token)
     import torch
+    from PIL import Image
 
     w = max(256, min(req.width, 1536)) // 16 * 16
     h = max(256, min(req.height, 1536)) // 16 * 16
     gen = torch.Generator("cuda").manual_seed(req.seed) if req.seed is not None else None
+    # Reference/continuity images, in weight order: world/style anchor FIRST, previous frame
+    # SECOND. height/width are always passed explicitly, so refs never change the output size.
+    refs: list = []
+    if req.ref_image_b64:
+        refs.append(Image.open(io.BytesIO(base64.b64decode(req.ref_image_b64))).convert("RGB"))
+    if req.init_image_b64:
+        refs.append(Image.open(io.BytesIO(base64.b64decode(req.init_image_b64))).convert("RGB"))
+    call_kwargs = dict(prompt=req.prompt, num_inference_steps=max(1, min(req.steps, 8)),
+                       guidance_scale=1.0, height=h, width=w, generator=gen)
+    if refs:
+        call_kwargs["image"] = refs  # Flux2KleinPipeline: PIL image or list of them
     with _gpu_lock:
         pipe = _get_pipe("flux")
-        out = pipe(prompt=req.prompt, num_inference_steps=max(1, min(req.steps, 8)),
-                   guidance_scale=1.0, height=h, width=w, generator=gen)
+        out = pipe(**call_kwargs)
     img = out.images[0]
     buf = io.BytesIO()
     img.save(buf, format="PNG")

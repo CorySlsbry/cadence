@@ -43,6 +43,10 @@ def _augment_prompt(prompt: str) -> str:
 
 class SelfHostGenerator:
     name = "selfhost"
+    # FLUX.2-klein on cadence-gen accepts reference/continuity images, so this generator can
+    # honor init_image/ref_image. Callers gate visual-cohesion chaining on this flag; generators
+    # without it (Imagen/Ideogram/stub) leave the pipeline byte-identical to today.
+    supports_image_conditioning = True
 
     def __init__(self, base_url: str, token: str, *, ledger: CostLedger | None = None,
                  fallback=None, timeout: float | None = None) -> None:
@@ -61,13 +65,21 @@ class SelfHostGenerator:
         )
         self.cost_per_image = float(os.environ.get("CADENCE_SELFHOST_COST", "0.002"))
 
-    def generate(self, prompt, *, aspect="9x16", style_refs=None, seed=None) -> GenResult:
+    def generate(self, prompt, *, aspect="9x16", style_refs=None, seed=None,
+                 init_image=None, ref_image=None) -> GenResult:
         if self.ledger is not None and not self.ledger.can_spend(self.cost_per_image):
             raise BudgetExceeded(f"AI budget cap reached (need ${self.cost_per_image}).")
         prompt = _augment_prompt(prompt)  # suppress garbled background text (also flows to fallback)
         w, h = _SIZES.get(aspect, _SIZES["9x16"])
-        body = json.dumps({"prompt": prompt, "width": w, "height": h, "steps": 4,
-                           **({"seed": seed} if seed is not None else {})}).encode()
+        body_obj = {"prompt": prompt, "width": w, "height": h, "steps": 4,
+                    **({"seed": seed} if seed is not None else {})}
+        # Visual-cohesion conditioning (optional): world/style anchor + previous frame. Only added
+        # when present, so a no-chaining request serializes to the exact same body as before.
+        if ref_image is not None:
+            body_obj["ref_image_b64"] = base64.b64encode(ref_image).decode()
+        if init_image is not None:
+            body_obj["init_image_b64"] = base64.b64encode(init_image).decode()
+        body = json.dumps(body_obj).encode()
         req = urllib.request.Request(
             f"{self.base_url}/image", data=body, method="POST",
             headers={"content-type": "application/json", "x-gen-token": self.token},

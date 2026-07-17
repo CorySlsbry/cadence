@@ -29,4 +29,10 @@ class ImageGenerator(Protocol):
         aspect: str = "9x16",
         style_refs: list[str] | None = None,
         seed: int | None = None,
-    ) -> GenResult: ...
+        init_image: bytes | None = None,
+        ref_image: bytes | None = None,
+    ) -> GenResult:
+        """``init_image`` (previous frame, img2img continuity) and ``ref_image`` (persistent
+        world/style anchor) are optional visual-cohesion conditioners. Generators that can't use
+        them ignore them; when both are ``None`` the output is byte-identical to today."""
+        ...
