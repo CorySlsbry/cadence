@@ -69,13 +69,14 @@ def _download_prefix(gs_uri: str, dest: str) -> None:
              if not b.name.endswith("/") and "/.cache/" not in b.name]
     if not blobs:
         raise RuntimeError(f"no blobs under {gs_uri}")
-    names = [b.name for b in blobs]
+    # blob_name_prefix PREPENDS to each name to form the full GCS path (it is not a
+    # strip!) — so pass RELATIVE names; local files then land at dest/<relative-name>.
+    rel_names = [b.name[len(prefix) + 1:] for b in blobs]
     t0 = time.time()
-    # blob_name_prefix strips the GCS prefix so files land at dest/<relative-name>.
     results = transfer_manager.download_many_to_path(
-        bucket, names, destination_directory=dest, blob_name_prefix=prefix + "/",
+        bucket, rel_names, destination_directory=dest, blob_name_prefix=prefix + "/",
         max_workers=DL_WORKERS, worker_type=transfer_manager.THREAD)
-    for name, res in zip(names, results):
+    for name, res in zip(rel_names, results):
         if isinstance(res, Exception):
             raise RuntimeError(f"download failed for {name}: {res!r}")
     gb = sum(b.size or 0 for b in blobs) / 1e9
