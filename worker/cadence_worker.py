@@ -362,10 +362,25 @@ class Worker:
                 scene_direction = str(fc.get("scene_direction") or "")[:1400] if isinstance(fc, dict) else ""
                 topic_title = str(fc.get("topic") or "")[:200] if isinstance(fc, dict) else ""
                 animate = bool(fc.get("animate")) if isinstance(fc, dict) else False
+                # Premium "Cinematic motion" (Agency): /api/faceless gates the flag, but —
+                # like avatar billing above — route checks are bypassable via a direct
+                # render_jobs insert, so re-verify the plan AT THE GPU. Fail closed to the
+                # standard /animate lane (motion either way, same tokens).
+                cinematic = bool(fc.get("cinematic")) if isinstance(fc, dict) else False
+                if cinematic:
+                    try:
+                        _prof = (self.supabase.table("profiles").select("plan")
+                                 .eq("id", user_id).single().execute().data or {})
+                        cinematic = str(_prof.get("plan") or "") in ("agency", "admin")
+                    except Exception:  # noqa: BLE001 - unreadable plan -> no premium lane
+                        cinematic = False
+                    if not cinematic:
+                        print("[worker] faceless: cinematic requested without an agency "
+                              "plan; using /animate", flush=True)
                 result, edl_f = self._render_faceless(
                     recording, ctrl, tmp, out_path, keys, music_path,
                     scene_style=scene_style, scene_direction=scene_direction,
-                    topic_title=topic_title, animate=animate,
+                    topic_title=topic_title, animate=animate, cinematic=cinematic,
                 )
                 out_path = self._maybe_apply_frame(job, user_id, tmp, out_path)
                 output_key = f"{user_id}/{job_id}.mp4"
@@ -552,7 +567,7 @@ class Worker:
     def _render_faceless(self, audio_path: str, ctrl, tmp: str, out_path: str, keys=None,
                          music_path: str | None = None, scene_style: str = "",
                          scene_direction: str = "", topic_title: str = "",
-                         animate: bool = False):
+                         animate: bool = False, cinematic: bool = False):
         """Faceless render: narration audio -> ASR -> per-moment AI scenes (the existing
         contextual b-roll engine) stitched into a full-duration visual track + karaoke
         captions + optional hook card + ducked music. Returns (RenderResult, edl) — the
@@ -689,7 +704,32 @@ class Worker:
                     break
 
             clips: dict[int, str] = {}  # scene index -> motion clip path (absent -> still)
-            if to_animate:
+            # PREMIUM "Cinematic motion" lane (Agency plan): render the paid scenes on the
+            # cadence-gen-premium Cloud Run JOB (Wan 2.2 I2V-A14B) instead of per-scene FastWan
+            # /animate calls. Token charging is UNCHANGED — the pre-charge loop above already
+            # burned the same 2 tokens/scene the /animate path burns (premium pricing is a later
+            # decision). Scene-count cap: each GPU task fits ~19min model load + ≤8 scenes ×
+            # ~2min render inside the job's 55-min task timeout; at 3 GPUs that's 24 scenes,
+            # comfortably inside the worker's own request budget. Bigger renders (and any
+            # whole-job failure/timeout) fall back to the /animate pool below — motion either
+            # way; per-scene failures INSIDE the job stay stills, exactly like today.
+            premium_done = False
+            if cinematic and to_animate:
+                prem_cap = int(os.environ.get("CADENCE_PREMIUM_MAX_SCENES", "24"))
+                if len(inserts) > prem_cap:
+                    print(f"[worker] faceless: cinematic requested but {len(inserts)} scenes "
+                          f"exceeds the {prem_cap}-scene cap; using /animate", flush=True)
+                else:
+                    try:
+                        clips = self._animate_scenes_premium(
+                            [(k, inserts[k]) for k in to_animate], anim_prompt,
+                            topic_title, tmp)
+                        premium_done = True
+                    except Exception as exc:  # noqa: BLE001 - premium lane down -> FastWan fallback
+                        print(f"[worker] faceless: cinematic lane failed ({exc!r}); "
+                              f"falling back to /animate", flush=True)
+                        clips = {}
+            if to_animate and not premium_done:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
                     futs = {pool.submit(_animate_one, k, inserts[k]): k for k in to_animate}
                     done = 0
@@ -721,6 +761,8 @@ class Worker:
                 "degraded_scenes": len(inserts) - animated_scenes,  # scenes that fell back to still
                 "scenes_total": len(inserts),
             }
+            if premium_done:  # observability only — which motion engine produced the clips
+                self._faceless_stats["cinematic"] = True
             build_background_video_mixed(items, dur, bg, ff=self.ff, width=w, height=h, fps=fps)
         else:
             build_background_video(inserts, dur, bg, ff=self.ff, width=w, height=h, fps=fps)
@@ -804,6 +846,116 @@ class Worker:
             kept=(TimeRange(0.0, round(dur, 3)),), removed=(), transcript=tr,
         )
         return result, edl
+
+    def _animate_scenes_premium(self, scenes, anim_prompt: str, topic_title: str,
+                                tmp: str) -> dict[int, str]:
+        """Premium "Cinematic motion": animate scene stills on the cadence-gen-premium
+        Cloud Run JOB (Wan 2.2 I2V-A14B on an RTX PRO 6000) instead of per-scene FastWan
+        /animate calls. Contract: gen/premium/PREMIUM_DEPLOY.md + gen/premium/main.py.
+
+        ``scenes`` is ``[(original_scene_index, BrollInsert), ...]`` — the token-paid
+        subset, already charged by the caller. Uploads each still + manifest.json under
+        ``jobs/<render-job-id>/in/`` on the premium I/O bucket, executes the job with
+        per-execution env overrides (A14B_INPUT_PREFIX/A14B_OUTPUT_PREFIX) sharded across
+        up to 3 GPU tasks (the job renders ``scenes[i::N]`` per task), polls the execution
+        to completion, and downloads the mp4s (720x1280 @ 16 fps — the compositor
+        normalizes fps) into the SAME ``{scene_index: local_path}`` dict shape the
+        /animate pool produces, so everything downstream is untouched.
+
+        Raises on any whole-job failure/timeout (the caller falls back to /animate).
+        Scenes the job reports as failed in results.json simply have no ``<id>.mp4``
+        under the output prefix — they're left out of the dict and stay stills, exactly
+        like today's per-scene degrade path.
+        """
+        import hashlib
+        import math
+        import uuid
+
+        # google-cloud-run v2 + google-cloud-storage (worker/requirements.txt); the worker
+        # runs as cadence-run@ on Cloud Run, so ADC covers both the job execute (the SA
+        # holds roles/run.developer on the job) and the I/O bucket (objectAdmin).
+        from google.cloud import run_v2, storage
+
+        job_name = os.environ.get(
+            "CADENCE_PREMIUM_JOB",
+            "projects/builder-ai-497610/locations/us-central1/jobs/cadence-gen-premium")
+        bucket_name = os.environ.get("CADENCE_PREMIUM_BUCKET", "cadence-premium-jobs-uscentral1")
+        poll_timeout = float(os.environ.get("CADENCE_PREMIUM_POLL_S", "3000"))
+
+        run_id = self._current_job_id or uuid.uuid4().hex
+        in_prefix = f"jobs/{run_id}/in"
+        out_prefix = f"jobs/{run_id}/out"
+        # The SAME locked seed the still generator used (see build_ai_broll) — stable
+        # per-topic, so the motion pass continues the video's locked aesthetic.
+        video_seed = int(hashlib.sha256((topic_title or "cadence").encode()).hexdigest()[:8], 16)
+
+        gcs = storage.Client()
+        bucket = gcs.bucket(bucket_name)
+        manifest: list[dict] = []
+        for k, ins in scenes:
+            sid = f"s{k:03d}"
+            bucket.blob(f"{in_prefix}/{sid}.png").upload_from_filename(ins.image_path)
+            # Same motion prompt the /animate path sends, one per scene (the job's
+            # manifest contract is per-scene prompts).
+            manifest.append({"id": sid, "image": f"{sid}.png",
+                             "prompt": anim_prompt, "seed": video_seed})
+        bucket.blob(f"{in_prefix}/manifest.json").upload_from_string(
+            json.dumps({"scenes": manifest}), content_type="application/json")
+
+        # ≤8 scenes per GPU task (55-min task cap ≈ 19min model load + 8 × ~2min render),
+        # max 3 tasks (the GPU quota). Verified against google-cloud-run 0.16.1:
+        # RunJobRequest.Overrides(container_overrides=[ContainerOverride(env=[EnvVar])],
+        # task_count=N); run_job returns a google.api_core.operation.Operation whose
+        # result is the completed Execution (raises if the execution failed).
+        task_count = min(3, max(1, math.ceil(len(scenes) / 8)))
+        op = run_v2.JobsClient().run_job(request=run_v2.RunJobRequest(
+            name=job_name,
+            overrides=run_v2.RunJobRequest.Overrides(
+                container_overrides=[run_v2.RunJobRequest.Overrides.ContainerOverride(env=[
+                    run_v2.EnvVar(name="A14B_INPUT_PREFIX",
+                                  value=f"gs://{bucket_name}/{in_prefix}"),
+                    run_v2.EnvVar(name="A14B_OUTPUT_PREFIX",
+                                  value=f"gs://{bucket_name}/{out_prefix}"),
+                ])],
+                task_count=task_count,
+            ),
+        ))
+        print(f"[worker] faceless: cinematic job executing ({len(scenes)} scene(s), "
+              f"{task_count} task(s), timeout {poll_timeout:.0f}s)", flush=True)
+
+        # Poll ourselves (op.done() is one refresh RPC per call) instead of blocking in
+        # op.result(timeout=...) so the render's progress bar keeps moving through the
+        # ~19min model load + ~2min/scene render.
+        expected_s = 19 * 60 + math.ceil(len(scenes) / task_count) * 130.0
+        t0 = time.monotonic()
+        while not op.done():
+            elapsed = time.monotonic() - t0
+            if elapsed > poll_timeout:
+                raise TimeoutError(f"cinematic job still running after {poll_timeout:.0f}s")
+            if self._current_job_id:
+                frac = min(elapsed / expected_s, 0.96)  # same 0.55→0.80 band as /animate
+                self._update(self._current_job_id, progress=round(0.55 + 0.24 * frac, 2))
+            time.sleep(15.0)
+        op.result()  # already done — raises the execution's error, if any
+
+        # Success uploads are the per-scene truth (main.py writes <id>.mp4 only for "ok"
+        # scenes and exits 0 when at least one rendered); anything absent stays a still.
+        present = {b.name for b in gcs.list_blobs(bucket_name, prefix=out_prefix + "/")}
+        clips: dict[int, str] = {}
+        for k, _ins in scenes:
+            blob_name = f"{out_prefix}/s{k:03d}.mp4"
+            if blob_name not in present:
+                print(f"[worker] faceless: cinematic scene {k} failed on the job -> still",
+                      flush=True)
+                continue
+            local = os.path.join(tmp, f"scene_motion_{k}.mp4")
+            bucket.blob(blob_name).download_to_filename(local)
+            clips[k] = local
+        if not clips:  # execution "succeeded" but nothing usable — treat as a lane failure
+            raise RuntimeError("cinematic job produced no clips")
+        print(f"[worker] faceless: cinematic animated {len(clips)}/{len(scenes)} scene(s) "
+              f"in {time.monotonic() - t0:.0f}s", flush=True)
+        return clips
 
     def _social_captions(self, edl, *, credit: bool = False, keys=None):
         """Generate per-platform 'ready to post' captions from the transcript. A cheap

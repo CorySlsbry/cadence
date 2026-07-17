@@ -13,3 +13,7 @@ faster-whisper==1.2.1
 mediapipe==0.10.35
 google-genai==2.8.0
 pyspellchecker==0.9.0
+# Premium "Cinematic motion" lane: execute the cadence-gen-premium Cloud Run JOB and
+# move scene stills/clips through its GCS I/O bucket (ADC as cadence-run@ on Cloud Run).
+google-cloud-run==0.16.1
+google-cloud-storage==3.13.0

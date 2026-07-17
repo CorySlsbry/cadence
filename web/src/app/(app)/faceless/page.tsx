@@ -18,17 +18,18 @@ export default async function FacelessPage() {
   } = await supabase.auth.getUser();
 
   let maxLengthSec = 90;
+  let plan = "free";
   if (user) {
     const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).maybeSingle();
-    const planKey = (profile?.plan as string | null) ?? "free";
+    plan = (profile?.plan as string | null) ?? "free";
     const admin = createAdminClient();
     const { data: planRow } = await admin
       .from("plans")
       .select("max_length_sec")
-      .eq("key", planKey)
+      .eq("key", plan)
       .maybeSingle();
     maxLengthSec = (planRow?.max_length_sec as number | null) ?? 90;
   }
 
-  return <FacelessClient maxLengthSec={maxLengthSec} />;
+  return <FacelessClient maxLengthSec={maxLengthSec} plan={plan} />;
 }

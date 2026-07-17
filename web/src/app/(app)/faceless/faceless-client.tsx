@@ -128,7 +128,7 @@ function stageFor(p: number, status: string): string {
   return "Finishing up";
 }
 
-export function FacelessClient({ maxLengthSec }: { maxLengthSec: number }) {
+export function FacelessClient({ maxLengthSec, plan }: { maxLengthSec: number; plan: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [mode, setMode] = useState<"topic" | "script">("topic");
   const [topic, setTopic] = useState("");
@@ -150,6 +150,11 @@ export function FacelessClient({ maxLengthSec }: { maxLengthSec: number }) {
   // Default to real AI motion (FastWan i2v on our GPU) — animated scenes are the product's
   // core value; users can switch to "stills" for a faster/cheaper render.
   const [sceneMode, setSceneMode] = useState<"stills" | "motion">("motion");
+  // Premium "Cinematic motion" (Wan A14B on dedicated GPUs) — Agency plan, ≤2-min videos.
+  // The server enforces both; this mirrors the length-selector's plan gating in the UI.
+  const [cinematic, setCinematic] = useState(false);
+  const cinematicAllowed = plan === "agency" || plan === "admin";
+  const cinematicLengthOk = Number(lengthSec) <= 120;
 
   // Voice previews — one shared audio element; whichever key is playing owns it.
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -208,6 +213,12 @@ export function FacelessClient({ maxLengthSec }: { maxLengthSec: number }) {
 
   // Auto-generate is opt-in and remembered per browser.
   useEffect(() => { setAutoGen(localStorage.getItem("ch_autogen") === "1"); }, []);
+
+  // Cinematic motion caps at 2-minute videos (v1) — picking a longer length switches it off
+  // rather than letting the request 422 at the server.
+  useEffect(() => {
+    if (!cinematicLengthOk && cinematic) setCinematic(false);
+  }, [cinematicLengthOk, cinematic]);
 
   useEffect(() => {
     fetch("/api/faceless/voices")
@@ -454,6 +465,7 @@ export function FacelessClient({ maxLengthSec }: { maxLengthSec: number }) {
           lengthSec: Number(lengthSec),
           resolution,
           animate: sceneMode === "motion",
+          cinematic: sceneMode === "motion" && cinematic,
           ...castPayload,
         }),
       });
@@ -880,6 +892,37 @@ export function FacelessClient({ maxLengthSec }: { maxLengthSec: number }) {
                 camera genuinely move. 3 tokens per scene and a longer render.
               </p>
             )}
+            {sceneMode === "motion" && (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2">
+                <span id="cinematic-label" className="text-xs text-white/55">
+                  <b className="text-white/80">Cinematic motion</b>
+                  {!cinematicAllowed && (
+                    <span className="ml-1.5 rounded-md border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)]">
+                      Agency
+                    </span>
+                  )}
+                  {" "}— {cinematicAllowed
+                    ? cinematicLengthOk
+                      ? "film-grade motion from our biggest video model, on dedicated GPUs"
+                      : "available on videos up to 90s — pick a shorter length"
+                    : "film-grade motion from our biggest video model. Upgrade to Agency to unlock"}
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={cinematic}
+                  aria-labelledby="cinematic-label"
+                  disabled={!cinematicAllowed || !cinematicLengthOk}
+                  title={!cinematicAllowed ? "Unlock Cinematic motion on the Agency plan" : undefined}
+                  onClick={() => setCinematic((v) => !v)}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                    cinematic ? "bg-[var(--accent)]" : "bg-white/15"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${cinematic ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -906,7 +949,7 @@ export function FacelessClient({ maxLengthSec }: { maxLengthSec: number }) {
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-white/45">
               ≈ {scenes} AI scenes · {sceneMode === "motion" ? scenes * 3 : scenes} tokens
-              {sceneMode === "motion" && " · animated"}
+              {sceneMode === "motion" && (cinematic ? " · cinematic motion" : " · animated")}
               {castMode === "duo"
                 ? " · two-voice dialogue"
                 : voiceSel.provider === "elevenlabs"

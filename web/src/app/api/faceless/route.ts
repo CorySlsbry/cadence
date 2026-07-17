@@ -44,6 +44,7 @@ const Body = z.object({
   sceneDirection: z.string().max(400).default(""),
   avatarSheet: z.string().max(900).default(""), // character sheet from /api/avatar
   animate: z.boolean().default(false),
+  cinematic: z.boolean().default(false), // premium Wan A14B motion — Agency plan only
   resolution: z.enum(["1080p", "4k"]).default("1080p"),
   projectId: z.string().uuid().nullable().optional(),
 });
@@ -195,6 +196,21 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: `Your plan tops out at ${maxLengthSec}s videos. Upgrade to make longer videos.` },
       { status: 403 },
+    );
+  }
+
+  // Cinematic motion (the premium Wan A14B lane) is Agency-tier only, and v1 caps it
+  // at 2-minute videos — the client toggle is a declaration, this is the enforcement.
+  if (body.cinematic && planKey !== "agency" && planKey !== "admin") {
+    return NextResponse.json(
+      { error: "Cinematic motion is an Agency feature. Upgrade to the Agency plan to unlock it." },
+      { status: 403 },
+    );
+  }
+  if (body.cinematic && body.lengthSec > 120) {
+    return NextResponse.json(
+      { error: "Cinematic motion currently supports videos up to 2 minutes. Pick a shorter length or switch to standard animation." },
+      { status: 422 },
     );
   }
 
@@ -362,6 +378,7 @@ Return STRICT JSON: {"title": "scroll-stopping title (max 70 chars)", "body": "t
           scene_style: SCENE_STYLES.has(body.sceneStyle) ? body.sceneStyle : "cinematic",
           scene_direction: sceneDirection,
           animate: body.animate,
+          cinematic: body.cinematic,
           ...(duo
             ? { cast: duo.map((c) => ({ description: c.description, voice: c.voiceName ?? c.voice ?? c.voiceId })) }
             : {}),

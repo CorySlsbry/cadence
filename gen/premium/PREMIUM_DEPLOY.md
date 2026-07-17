@@ -77,12 +77,23 @@ Knobs (env): `A14B_STEPS=4` `A14B_FRAMES=81` `A14B_FPS=16` `A14B_WIDTH=720` `A14
 - Base image `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime` — cu128 wheels carry sm_120
   (Blackwell); the L4 lane's cu126 image does NOT run on this GPU.
 
-## Cost model
+## Cost model — MEASURED (first successful execution 2026-07-17, image v4)
 
 $4.722/hr all-in (20 vCPU + 80 Gi + GPU), billed per-second for the execution only.
-Model load ~5–15 min (126 GB FUSE read) + ~30–90 s/scene → a 60–90 s short (~15–20 scenes)
-≈ 20–40 min ≈ **$1.60–3.20**; a 15-min long-form (~130 scenes) ≈ 2–3.5 h ≈ **$10–17**.
-Meter it: premium/Cinematic renders should carry a token multiplier (Agency tier absorbs it).
+- **Render: 121 s/scene** (81 frames, 720×1280, 4-step Lightning) → output 5.06 s @ 16 fps mp4.
+- Startup on v4 (THREAD downloads): 0.06 GB/s → **2297 s (38 min) ready-on-cuda ≈ $3.00 of
+  load per execution.** v5 switches to PROCESS workers + C crc32c — target < 10 min.
+- First test execution total ≈ 41 min ≈ **$3.22** for one scene (load-dominated; amortizes
+  across a whole video's scenes per execution).
+- Per-video (assuming v5 ~8 min load): 60–90 s short (~15–20 scenes) ≈ 8 + 30–40 min → use
+  `--tasks 2` ≈ **~28 min wall, ~$4.40**; 15-min long-form (~130 scenes ≈ 4.4 h of render) →
+  `--tasks 3` + chunked sequential executions (55-min GPU task cap) ≈ **~$21**; dropping
+  `A14B_FRAMES` to 49 (~3 s loops — the compositor palindrome-loops ~2 s windows anyway)
+  cuts render ~40% → **~$13**. Meter premium/Cinematic renders with a token multiplier
+  (Agency $149 absorbs it).
+- Quality note: first render turned a crude synthetic gradient into a photoreal dusk
+  seascape (cloud formation, water ripple, light-pillar interpretation) — the A14B
+  motion/photorealism gap over FastWan-5B is real.
 
 ## Rollout plan (worker wiring — next phase)
 
