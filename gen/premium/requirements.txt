@@ -11,3 +11,4 @@ pillow>=10.4
 imageio[ffmpeg]>=2.36   # export_to_video
 numpy>=2.0.2
 google-cloud-storage>=2.18
+google-crc32c>=1.5   # C checksum impl — the pure-python fallback throttles downloads

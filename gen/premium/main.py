@@ -42,7 +42,9 @@ LORA_URI = os.environ.get(
     "A14B_LORA_URI",
     "gs://cadence-gen-models-uscentral1/wan22-a14b/loras/wan22-lightning-i2v-seko-v1")
 STAGE_DIR = os.environ.get("A14B_STAGE_DIR", "/tmp/a14b")
-DL_WORKERS = int(os.environ.get("A14B_DL_WORKERS", "16"))
+# PROCESS workers, not THREAD: threaded downloads measured 0.06 GB/s aggregate (GIL-bound
+# checksum/IO) = 38 min startup; separate processes lift that cap. 12 ≈ one per shard.
+DL_WORKERS = int(os.environ.get("A14B_DL_WORKERS", "12"))
 STEPS = int(os.environ.get("A14B_STEPS", "4"))
 FRAMES = int(os.environ.get("A14B_FRAMES", "81"))
 FPS = int(os.environ.get("A14B_FPS", "16"))
@@ -75,7 +77,7 @@ def _download_prefix(gs_uri: str, dest: str) -> None:
     t0 = time.time()
     results = transfer_manager.download_many_to_path(
         bucket, rel_names, destination_directory=dest, blob_name_prefix=prefix + "/",
-        max_workers=DL_WORKERS, worker_type=transfer_manager.THREAD)
+        max_workers=DL_WORKERS, worker_type=transfer_manager.PROCESS)
     for name, res in zip(rel_names, results):
         if isinstance(res, Exception):
             raise RuntimeError(f"download failed for {name}: {res!r}")
