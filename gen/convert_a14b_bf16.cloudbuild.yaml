@@ -12,7 +12,7 @@ steps:
       - |
         set -e
         pip install -q torch --index-url https://download.pytorch.org/whl/cpu
-        pip install -q safetensors google-cloud-storage
+        pip install -q safetensors google-cloud-storage numpy
         python - <<'PY'
         import json, os, tempfile
         import torch
