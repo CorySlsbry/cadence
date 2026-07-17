@@ -45,7 +45,7 @@ STAGE_DIR = os.environ.get("A14B_STAGE_DIR", "/tmp/a14b")
 # THREAD workers: throughput is capped ~0.06 GB/s by the instance network either way
 # (PROCESS measured identical), and forking after CUDA init crashes the pool
 # (BrokenProcessPool). The real startup win is bf16-at-rest (half the bytes).
-DL_WORKERS = int(os.environ.get("A14B_DL_WORKERS", "12"))
+DL_WORKERS = int(os.environ.get("A14B_DL_WORKERS", "4"))  # few fat streams: 12 starved each other below the 120s stall timeout
 STEPS = int(os.environ.get("A14B_STEPS", "4"))
 FRAMES = int(os.environ.get("A14B_FRAMES", "81"))
 FPS = int(os.environ.get("A14B_FPS", "16"))
@@ -78,7 +78,8 @@ def _download_prefix(gs_uri: str, dest: str) -> None:
     t0 = time.time()
     results = transfer_manager.download_many_to_path(
         bucket, rel_names, destination_directory=dest, blob_name_prefix=prefix + "/",
-        max_workers=DL_WORKERS, worker_type=transfer_manager.THREAD)
+        max_workers=DL_WORKERS, worker_type=transfer_manager.THREAD,
+        download_kwargs={"timeout": 900})
     for name, res in zip(rel_names, results):
         if isinstance(res, Exception):
             raise RuntimeError(f"download failed for {name}: {res!r}")
