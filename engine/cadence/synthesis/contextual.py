@@ -2,10 +2,13 @@
 cutaway image.
 
 For each cutaway window we read the words spoken leading into it, distil a topic,
-build a hyperrealistic prompt that asks the model to show that topic (with the key
-phrase rendered in-scene — Ideogram's strength), generate it, optionally overlay a
-guaranteed-legible caption, and emit a :class:`BrollInsert`. Pure except for the
-injected :class:`ImageGenerator`, so it's fully testable with the stub.
+build a hyperrealistic prompt that asks the model to show that topic, generate it,
+optionally overlay a guaranteed-legible caption, and emit a :class:`BrollInsert`. Pure
+except for the injected :class:`ImageGenerator`, so it's fully testable with the stub.
+
+Generated scenes carry NO text: image models render words as gibberish, so the prompt
+asks for none and the burned-in karaoke captions carry every word (see ``_NO_TEXT_RULE``).
+Any legible caption on an image is drawn afterwards by PIL in ``compose_broll_image``.
 """
 
 from __future__ import annotations
@@ -102,12 +105,32 @@ def caption_for_topic(topic: str) -> str:
     return " ".join(w.capitalize() for w in topic.split())[:48]
 
 
+# STANDING RULE — never ask the model for text. Diffusion models render words as garbled
+# gibberish, so every word in a generated frame is wrong (the shipped defect: a garbled title
+# and a fake chat UI). The burned-in karaoke captions carry ALL the words, so a scene needs
+# none: concepts get depicted through people, places, action, and objects instead. This rule
+# is appended to every scene prompt; the self-host generator adds its own belt-and-braces
+# copy (cadence.imagegen.selfhost._ANTI_TEXT).
+_NO_TEXT_RULE = (
+    "Show the idea through people, places, action, and objects only — never through text: no "
+    "letters, words, numbers, headlines, titles, captions, watermarks, logos, signage, chat "
+    "windows, or screens with writing on them. Any screen, sign, book, or label in frame is "
+    "blank, abstract, or turned away out of frame."
+)
+
+
 def build_ai_prompt(topic: str, caption: str) -> str:
+    """Lexical-topic prompt (the no-distiller fallback path).
+
+    ``caption`` is retained for signature compatibility and is used by the caller for the
+    optional PIL-drawn overlay banner — it is deliberately NOT handed to the image model.
+    Asking a diffusion model to render a caption is what produced the garbled on-screen
+    text; see ``_NO_TEXT_RULE``.
+    """
     return (
         f"A hyperrealistic, cinematic vertical 9:16 photograph illustrating \"{topic}\". "
         "Premium editorial product photography, soft natural studio lighting, shallow depth of field, "
-        "ultra-detailed, modern, clean, high-end. A sleek laptop or device screen visible in the scene "
-        f"clearly displays the text \"{caption}\" in crisp modern UI typography. No watermark."
+        f"ultra-detailed, modern, clean, high-end. {_NO_TEXT_RULE}"
     )
 
 
@@ -122,14 +145,18 @@ def build_ai_prompt_scene(
     ``world`` is a video-level visual anchor (same recurring subject / setting / palette /
     lighting) prepended to EVERY scene so the whole render reads as one continuous film
     instead of a slideshow of unrelated images. Paired with a locked seed in build_ai_broll.
+
+    ``caption`` is retained for signature compatibility and is used by the caller for the
+    optional PIL-drawn overlay banner — it is deliberately NOT handed to the image model.
+    Both branches used to order the caption rendered "cleanly on a screen, sign, or surface";
+    that is precisely what produced the garbled on-screen text. See ``_NO_TEXT_RULE``.
     """
     anchor = f"{world}. " if world else ""
     if style_override:
         return (
             f"{anchor}A {style_override}, vertical 9:16 composition: {scene}. "
             "Ultra detailed, premium quality, masterfully crafted, rich texture and depth. "
-            f"The phrase \"{caption}\" appears cleanly integrated into the scene in crisp readable "
-            "typography. No watermark, no garbled text."
+            f"{_NO_TEXT_RULE}"
         )
     look = (
         ", ".join(cine.to_prompt_clauses())
@@ -138,9 +165,7 @@ def build_ai_prompt_scene(
     )
     return (
         f"{anchor}A hyperrealistic cinematic vertical 9:16 photograph: {scene}. {look}. "
-        "Ultra detailed, modern, clean, premium editorial. "
-        f"The phrase \"{caption}\" appears cleanly on a screen, sign, or surface in the scene in crisp "
-        "modern typography. Photoreal, no watermark, no garbled text."
+        f"Ultra detailed, modern, clean, premium editorial. {_NO_TEXT_RULE}"
     )
 
 

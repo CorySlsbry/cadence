@@ -58,6 +58,10 @@ AUDIO_FIT_BPS = 160_000  # AAC track reserved in the fit budget
 
 # Faceless scene styles: the override REPLACES the photoreal prompt framing entirely
 # (see build_ai_prompt_scene). Keys are what the web sends in faceless.scene_style.
+# STANDING RULE: a style describes a LOOK, never text-bearing set dressing. Never name
+# signage, screens, UI, titles, or lettering here — a style clause is prepended to the
+# scene prompt and would fight the no-text rule (contextual._NO_TEXT_RULE). "cyberpunk"
+# used to ask for "holographic signage glow" and got exactly that: garbled fake signs.
 SCENE_STYLES = {
     "claymation": "handcrafted claymation stop-motion scene, plasticine characters with subtle "
                   "fingerprint texture, miniature handmade set, warm studio lighting",
@@ -69,7 +73,7 @@ SCENE_STYLES = {
              "colors, dramatic graphic-novel panel composition",
     "watercolor": "hand-painted watercolor illustration, soft pigment washes, textured cold-press "
                   "paper grain, delicate ink linework, gallery-quality",
-    "cyberpunk": "neon cyberpunk scene, rain-slick reflective streets, holographic signage glow, "
+    "cyberpunk": "neon cyberpunk scene, rain-slick reflective streets, holographic neon glow, "
                  "dramatic magenta-and-cyan lighting, cinematic sci-fi atmosphere",
     "papercraft": "layered paper-cut craft scene, dimensional cardstock collage, crisp die-cut "
                   "edges, soft shadows between paper layers, handmade premium feel",
@@ -603,10 +607,24 @@ class Worker:
         words_out = [(w.text, w.start, w.end) for w in tr.words]
         w, h, fps = ctrl.synthesis.width, ctrl.synthesis.height, 30
 
-        # One scene every ~7s, snapped to sentence pauses: 3..16 scenes per video.
+        # One scene every ~5s (motion) or ~7s (stills), snapped to sentence pauses.
         gkey, gbyok = (keys or {}).get("gemini", (None, False))
-        # ~7s/scene; hard max is configurable (the user's token balance is the real bound).
-        cap = max(3, min(round(dur / 7.0), int(os.environ.get("CADENCE_MAX_SCENES", "130"))))
+        gen_url = os.environ.get("CADENCE_GEN_URL")
+        gen_token = os.environ.get("CADENCE_GEN_TOKEN")
+        # Decide motion HERE, with the same condition the render branch below uses, so the scene
+        # windows are planned for the render we actually perform (an animate request with no gen
+        # service configured stays on 7s stills instead of over-planning scenes it can't animate).
+        motion_on = bool(animate and gen_url and gen_token)
+        # Scene window length. MOTION targets ~5s: that is the i2v model's real ceiling (a
+        # FastWan clip caps at 121 frames @24fps = 5.04s), so a clip can actually COVER its
+        # window playing once, forward — the old ~7s window could not be covered by any single
+        # clip, which is what forced the looping/boomerang fill. Stills keep the ~7s cadence (a
+        # Ken-Burns push holds a 7s window fine). CADENCE_MOTION_SCENE_S retunes motion without a
+        # deploy. This plans ~33% MORE motion scenes (3 tokens each) than the old 7s divisor —
+        # intended and expected: it is what buys real, non-repeating motion.
+        scene_s = (max(1.0, float(os.environ.get("CADENCE_MOTION_SCENE_S", "5.0")))
+                   if motion_on else 7.0)
+        cap = max(3, min(round(dur / scene_s), int(os.environ.get("CADENCE_MAX_SCENES", "130"))))
         interval = max(3.5, dur / cap)
         windows = plan_background_windows(words_out, dur, interval=interval)
         n = max(2, min(len(windows), cap))
@@ -643,9 +661,7 @@ class Worker:
         if not inserts:
             raise RuntimeError("faceless: scene generation produced no images")
         bg = os.path.join(tmp, "scenes.mp4")
-        gen_url = os.environ.get("CADENCE_GEN_URL")
-        gen_token = os.environ.get("CADENCE_GEN_TOKEN")
-        if animate and gen_url and gen_token:
+        if motion_on:
             # True motion: animate each scene on our GPU (FastWan i2v), BOUNDED-PARALLEL so a
             # long video doesn't serialize dozens of ~cold L4 calls. Each animated scene meters
             # 2 tokens; a failed/over-budget scene degrades to its still (graceful, per-scene).
@@ -662,8 +678,15 @@ class Worker:
             motion = SCENE_STYLES.get(scene_style, "cinematic photoreal")
             anim_prompt = (f"{motion}. The characters and subject move naturally; "
                            f"subtle cinematic camera push; keep composition and style.")
-            # 2s loops seamlessly under captions; each extra second is ~3min more L4 time/scene.
-            anim_secs = float(os.environ.get("CADENCE_ANIMATE_SECONDS", "2.0"))
+            # MAX clip length. Each scene now asks for its OWN window (see _animate_one) instead
+            # of one fixed length for every scene, so a clip covers its segment playing once,
+            # forward — no loop, no reverse — and short windows cost less L4 time. This is the
+            # ceiling on that: CADENCE_ANIMATE_MAX_S is the knob, CADENCE_ANIMATE_SECONDS its
+            # legacy alias (it used to be the fixed 2.0s length; as a max it means the same
+            # thing). 5.0s is the FastWan ceiling — animate_image clamps frames at 121 @24fps
+            # = 5.04s regardless, so raising this knob past 5 cannot lengthen a clip.
+            anim_max_s = float(os.environ.get("CADENCE_ANIMATE_MAX_S")
+                               or os.environ.get("CADENCE_ANIMATE_SECONDS") or "5.0")
             concurrency = max(1, int(os.environ.get("CADENCE_ANIMATE_CONCURRENCY", "6")))
             # Wall-clock guard, largely obsolete under parallelism + per-user token gating; kept
             # only as a runaway ceiling (default 7200s, well above any real render).
@@ -672,15 +695,22 @@ class Worker:
 
             def _animate_one(idx: int, ins) -> bytes:
                 """GPU-animate one scene with ONE retry. No ledger access here — charging stays
-                serialized on the main thread (thread-safe against the shared ai_spend row)."""
+                serialized on the main thread (thread-safe against the shared ai_spend row).
+
+                The clip is generated long enough to COVER this scene's own window, so the
+                compositor plays it once, forward. The +0.5s covers the compositor's 0.4s xfade
+                extension with REAL motion rather than a frozen tail (see
+                matte.replace.build_background_video_mixed).
+                """
                 with open(ins.image_path, "rb") as fh:
                     img_bytes = fh.read()
+                secs = min(float(ins.end) - float(ins.start) + 0.5, anim_max_s)
                 last_exc: Exception | None = None
                 for attempt in range(2):  # initial try + one retry, then let the caller degrade
                     try:
                         return animate_image(
                             gen_url, gen_token, img_bytes, prompt=anim_prompt,
-                            seconds=anim_secs, width=704, height=1280,
+                            seconds=secs, width=704, height=1280,
                         )
                     except Exception as exc:  # noqa: BLE001 - retry once before degrading
                         last_exc = exc
@@ -895,10 +925,22 @@ class Worker:
         for k, ins in scenes:
             sid = f"s{k:03d}"
             bucket.blob(f"{in_prefix}/{sid}.png").upload_from_filename(ins.image_path)
+            # Size each clip to its OWN scene window (+0.5s to cover the compositor's 0.4s xfade
+            # extension with real motion rather than a held tail), so premium clips cover their
+            # windows and play once, forward — same contract as the /animate lane. This lane runs
+            # at 16fps; main.py honours a per-scene num_frames (gen/premium/main.py).
+            #
+            # 81 IS A HARD PER-MODEL CEILING — do not raise it without re-verifying against the
+            # model card. 81 frames @16fps = 5.06s is Wan 2.2 I2V-A14B's TRAINED CONTEXT WINDOW;
+            # past it the model itself reverts/reverses the action (the subject walks up, then
+            # walks back) — the very defect this change exists to remove. It is NOT the same
+            # budget as the free lane: /animate runs FastWan2.2-TI2V-5B at 121f @24fps = 5.04s.
+            # Same ~5s of screen time, different frame counts. The caps are per-model.
+            frames = min(int(round((float(ins.end) - float(ins.start) + 0.5) * 16)) + 1, 81)
             # Same motion prompt the /animate path sends, one per scene (the job's
             # manifest contract is per-scene prompts).
-            manifest.append({"id": sid, "image": f"{sid}.png",
-                             "prompt": anim_prompt, "seed": video_seed})
+            manifest.append({"id": sid, "image": f"{sid}.png", "prompt": anim_prompt,
+                             "seed": video_seed, "num_frames": frames})
         bucket.blob(f"{in_prefix}/manifest.json").upload_from_string(
             json.dumps({"scenes": manifest}), content_type="application/json")
 

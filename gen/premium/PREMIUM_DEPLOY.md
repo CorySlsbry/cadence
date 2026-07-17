@@ -87,10 +87,20 @@ $4.722/hr all-in (20 vCPU + 80 Gi + GPU), billed per-second for the execution on
   across a whole video's scenes per execution).
 - Per-video (assuming v5 ~8 min load): 60–90 s short (~15–20 scenes) ≈ 8 + 30–40 min → use
   `--tasks 2` ≈ **~28 min wall, ~$4.40**; 15-min long-form (~130 scenes ≈ 4.4 h of render) →
-  `--tasks 3` + chunked sequential executions (55-min GPU task cap) ≈ **~$21**; dropping
-  `A14B_FRAMES` to 49 (~3 s loops — the compositor palindrome-loops ~2 s windows anyway)
-  cuts render ~40% → **~$13**. Meter premium/Cinematic renders with a token multiplier
-  (Agency $149 absorbs it).
+  `--tasks 3` + chunked sequential executions (55-min GPU task cap) ≈ **~$21**. Meter
+  premium/Cinematic renders with a token multiplier (Agency $149 absorbs it).
+- **Do not shorten clips to cut cost.** This used to suggest dropping `A14B_FRAMES` to 49
+  (~3 s) "since the compositor palindrome-loops ~2 s windows anyway" — that palindrome was
+  the boomerang defect (subject walks forward, then backward) and is gone. The worker now
+  sizes `num_frames` per scene from the scene's own window so each clip covers its segment
+  playing ONCE, forward; a clip that falls short holds its last frame under a continuous
+  Ken-Burns push. Shortening frames now buys a frozen tail, not a cheaper loop.
+- **81 frames is a hard ceiling, not a default.** It is Wan 2.2 I2V-A14B's trained context
+  window (81 f @ 16 fps = 5.06 s). Past it the model itself reverts/reverses the action, so
+  `A14B_FRAMES` and any per-scene `num_frames` are clamped to it (`FRAMES_MAX` in `main.py`).
+  Never raise it without re-verifying against the model card. This is a per-model budget: the
+  free `/animate` lane runs FastWan2.2-TI2V-5B at its own 121 f @ 24 fps = 5.04 s window. Same
+  ~5 s of screen time, different frame counts — the two are not interchangeable.
 - Quality note: first render turned a crude synthetic gradient into a photoreal dusk
   seascape (cloud formation, water ripple, light-pillar interpretation) — the A14B
   motion/photorealism gap over FastWan-5B is real.
@@ -98,7 +108,8 @@ $4.722/hr all-in (20 vCPU + 80 Gi + GPU), billed per-second for the execution on
 ## Rollout plan (worker wiring — next phase)
 
 `_render_faceless` gets a premium branch: when the job/tier requests Cinematic motion, upload
-stills+manifest, execute this job (Cloud Run Jobs API, async poll), pull the mp4s into the same
-`by_image` map the compositor already consumes (palindrome/xfade path unchanged). Free tier keeps
-FastWan-5B on the scale-to-zero L4. Fallback option if Job quality/cost disappoints:
-HunyuanVideo-1.5 on the L4 (license carve-out: no EU/UK/KR output monetization).
+stills+manifest (with a per-scene `num_frames` sized from each scene's window), execute this job
+(Cloud Run Jobs API, async poll), pull the mp4s into the same `{scene_index: path}` map the
+compositor already consumes (xfade path unchanged; the palindrome pre-pass it used to feed is
+gone). Free tier keeps FastWan-5B on the scale-to-zero L4. Fallback option if Job quality/cost
+disappoints: HunyuanVideo-1.5 on the L4 (license carve-out: no EU/UK/KR output monetization).

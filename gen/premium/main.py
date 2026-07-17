@@ -11,9 +11,13 @@ Env contract (set per-execution via --update-env-vars):
   A14B_OUTPUT_PREFIX  gs://bucket/prefix for the rendered mp4s + results.json
 Optional knobs: A14B_STEPS=4  A14B_FRAMES=81  A14B_FPS=16  A14B_WIDTH=720
   A14B_HEIGHT=1280  A14B_MODELS_DIR  A14B_LORA_DIR
+A14B_FRAMES and a scene's num_frames are both CLAMPED to 81 (FRAMES_MAX) — the model's
+trained context window; beyond it the model reverses the action. See FRAMES_MAX.
 
 manifest.json: {"scenes": [{"id": "s01", "image": "s01.png", "prompt": "...",
                             "seed": 42, "num_frames": 81?}, ...]}
+  num_frames is optional and per-scene (the worker sizes it from the scene's own
+  window so each clip covers its segment); it is clamped to 17..81.
 
 Exit 0 if at least one scene rendered (per-scene failures are recorded in
 results.json, mirroring the worker's degrade-to-still contract); exit 1 only if
@@ -47,10 +51,30 @@ STAGE_DIR = os.environ.get("A14B_STAGE_DIR", "/tmp/a14b")
 # (BrokenProcessPool). The real startup win is bf16-at-rest (half the bytes).
 DL_WORKERS = int(os.environ.get("A14B_DL_WORKERS", "4"))  # few fat streams: 12 starved each other below the 120s stall timeout
 STEPS = int(os.environ.get("A14B_STEPS", "4"))
-FRAMES = int(os.environ.get("A14B_FRAMES", "81"))
+# 81 frames @16fps (5.06s) is Wan 2.2 I2V-A14B's TRAINED CONTEXT WINDOW, and therefore a HARD
+# ceiling, not a default: asked for more, the model reverts/reverses the action (the subject
+# walks up, then walks back). Clamped here so neither the A14B_FRAMES knob nor a per-scene
+# manifest num_frames can drive the pipeline past it. Never raise without re-verifying against
+# the model card. This is a PER-MODEL budget — the free /animate lane runs FastWan2.2-TI2V-5B
+# and caps at its own 121-frame @24fps window (gen/main.py); the two are not interchangeable.
+FRAMES_MAX = 81
+FRAMES = int(os.environ.get("A14B_FRAMES", "81"))  # clamped + snapped to 4k+1 by _grid_frames
 FPS = int(os.environ.get("A14B_FPS", "16"))
 WIDTH = int(os.environ.get("A14B_WIDTH", "720"))
 HEIGHT = int(os.environ.get("A14B_HEIGHT", "1280"))
+
+
+def _grid_frames(n: int) -> int:
+    """Clamp to 17..FRAMES_MAX and snap onto Wan's 4k+1 frame grid.
+
+    The causal 3D VAE compresses time 4x, so a clip must be 4k+1 frames (17, 21 ... 81).
+    Sizing num_frames from a scene's own window lands off-grid (a 3.2s window -> 90f), and
+    diffusers then floors the latent length and silently drops the remainder. Snap DOWN, so
+    the result can never exceed FRAMES_MAX — the trained context window past which the model
+    reverts/reverses the action.
+    """
+    n = max(17, min(n, FRAMES_MAX))
+    return max(17, ((n - 1) // 4) * 4 + 1)
 
 
 def _split_gs(uri: str) -> tuple[str, str]:
@@ -219,7 +243,8 @@ def main() -> int:
                 image=image, prompt=sc.get("prompt") or "",
                 negative_prompt=sc.get("negative_prompt") or "",
                 height=HEIGHT, width=WIDTH,
-                num_frames=int(sc.get("num_frames") or FRAMES),
+                # Per-scene length, clamped to the model's context window (see FRAMES_MAX).
+                num_frames=_grid_frames(int(sc.get("num_frames") or FRAMES)),
                 num_inference_steps=STEPS,
                 guidance_scale=1.0, guidance_scale_2=1.0,  # CFG off (distilled)
                 generator=gen,

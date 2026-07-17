@@ -225,31 +225,24 @@ def build_background_video_mixed(
 ) -> str:
     """Like :func:`build_background_video`, but a scene may be a real MOTION CLIP.
 
-    ``items`` is ``[(insert, clip_path_or_None), ...]`` — when a clip exists the segment
-    plays AI motion (looped/trimmed to its window); when ``None`` it falls back to the
-    Ken-Burns still. "Animated scenes" therefore degrades gracefully per-scene instead
-    of all-or-nothing."""
+    ``items`` is ``[(insert, clip_path_or_None), ...]`` — when a clip exists the segment plays
+    that AI motion; when ``None`` it falls back to the Ken-Burns still. "Animated scenes"
+    therefore degrades gracefully per-scene instead of all-or-nothing.
+
+    A motion clip plays exactly ONCE, FORWARD. It is never looped and never reversed. Clips are
+    generated long enough to cover their own window (the worker sizes each one from its scene
+    window: ``CADENCE_MOTION_SCENE_S`` / ``CADENCE_ANIMATE_MAX_S``); if one still falls short,
+    its LAST FRAME is held for the remainder. A slow Ken-Burns push runs across the WHOLE
+    segment — clip *and* any held tail — mirroring the stills branch, so the camera keeps
+    drifting even where the subject is frozen and it reads as a deliberate held shot.
+
+    This used to hard-loop a ~2s clip to fill a ~7s window, and (to hide the 2s jump-cut) looped
+    a forward+reverse PALINDROME pre-pass instead — which made the subject walk forward, then
+    backward, forward, backward. Both are gone: the fix is a clip that covers its window, not a
+    cleverer way to repeat a short one. Do not reintroduce ``-stream_loop`` or ``reverse`` here.
+    """
     ff = ff or FFmpeg()
-    # A raw ~2s motion clip hard-looped to fill a ~7s scene window jump-cuts back to its first
-    # frame every 2s — a visible "snap" that reads as glitchy AI. Pre-build a seamless PALINDROME
-    # (forward+reverse) of each clip: it starts and ends on the same frame, so -stream_loop is
-    # seamless (boomerang motion). Falls back to the raw clip if the pre-pass fails.
-    by_image: dict[str, str] = {}
-    for ins, clip in items:
-        if not clip:
-            continue
-        pp = clip.rsplit(".", 1)[0] + "_pp.mp4"
-        try:
-            ff.run([
-                "-y", "-i", clip,
-                "-filter_complex", "[0:v]split[f][r];[r]reverse[rr];[f][rr]concat=n=2:v=1[v]",
-                "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                "-pix_fmt", "yuv420p", pp,
-            ], timeout=120)
-            by_image[ins.image_path] = pp
-        except Exception as exc:  # noqa: BLE001 - degrade to the raw (hard-looped) clip
-            print(f"[matte] palindrome pre-pass failed ({exc!r}) -> raw loop", flush=True)
-            by_image[ins.image_path] = clip
+    clip_by_image: dict[str, str] = {ins.image_path: clip for ins, clip in items if clip}
     segs = _background_segments([ins for ins, _ in items], duration)
     if not segs:
         raise ValueError("build_background_video_mixed: no usable segments")
@@ -275,24 +268,34 @@ def build_background_video_mixed(
     chains: list[str] = []
     for i, (img_path, _seg_dur) in enumerate(segs):
         ed = eff[i]
-        clip = by_image.get(img_path)
+        clip = clip_by_image.get(img_path)
+        # The SAME slow push drives both branches: a still's Ken-Burns and a motion segment's
+        # camera drift have to match, or the cut between a motion scene and a degraded-to-still
+        # scene reads as a change of speed. Ramps over the whole (xfade-extended) segment.
+        ramp = f"min(t/{max(ed, 1.0):.2f}\\,1)"
+        factor = f"(1+{zoom - 1.0:.4f}*{ramp})"
+        sw = f"trunc(({width}*{factor})/2)*2"
+        ken_burns = (f"scale=w={sw}:h=-2:eval=frame,"
+                     f"crop={width}:{height}:(iw-{width})/2:(ih-{height})/2")
         if clip:
-            # Real motion: loop the clip to cover its (extended) window, normalize geometry + fps.
-            args += ["-stream_loop", "-1", "-t", f"{ed:.3f}", "-i", clip]
-            chains.append(
-                f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-                f"crop={width}:{height},setsar=1,fps={fps},trim=0:{ed:.3f},"
-                f"setpts=PTS-STARTPTS,format=yuv420p,settb=AVTB[v{i}]"
-            )
-        else:
-            args += ["-loop", "1", "-t", f"{ed:.3f}", "-i", img_path]
-            ramp = f"min(t/{max(ed, 1.0):.2f}\\,1)"
-            factor = f"(1+{zoom - 1.0:.4f}*{ramp})"
-            sw = f"trunc(({width}*{factor})/2)*2"
+            # Real motion, played ONCE and FORWARD. `-t` caps how much of the clip is read;
+            # tpad clones the LAST frame for any remainder (a held shot — never a loop, never a
+            # reverse), and trim lands the segment exactly on `ed`. setpts re-bases time to 0
+            # BEFORE the ken-burns scale so its `t` is segment-local, then the push runs across
+            # the clip and its held tail alike, keeping the camera alive on a frozen subject.
+            args += ["-t", f"{ed:.3f}", "-i", clip]
             chains.append(
                 f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
                 f"crop={width}:{height},setsar=1,fps={fps},"
-                f"scale=w={sw}:h=-2:eval=frame,crop={width}:{height}:(iw-{width})/2:(ih-{height})/2,"
+                f"tpad=stop_mode=clone:stop_duration={ed:.3f},trim=0:{ed:.3f},"
+                f"setpts=PTS-STARTPTS,{ken_burns},format=yuv420p,settb=AVTB[v{i}]"
+            )
+        else:
+            args += ["-loop", "1", "-t", f"{ed:.3f}", "-i", img_path]
+            chains.append(
+                f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height},setsar=1,fps={fps},"
+                f"{ken_burns},"
                 f"setpts=PTS-STARTPTS,format=yuv420p,settb=AVTB[v{i}]"
             )
     if n == 1:

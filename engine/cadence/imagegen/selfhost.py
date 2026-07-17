@@ -25,18 +25,32 @@ _SIZES = {
     "4x3": (1152, 896),
 }
 
-# Diffusion models render arbitrary text as gibberish, which reads as "trash" in the
-# background. Steer every GENERATED scene away from text; legible product UIs come from
-# real screenshots (the factual guardrail), not generation.
+# Diffusion models render arbitrary text as gibberish, and gibberish on screen reads as "trash".
+# The rule is ABSOLUTE: a generated scene carries NO text at all — the burned-in karaoke captions
+# carry every word. This used to say incidental text may stay "soft, blurred, and illegible",
+# which simply INVITED the model to draw blurry gibberish (and it did: a garbled title + a fake
+# chat UI shipped). Never re-introduce "illegible"/"blurred" wording here — permission to render
+# unreadable text is permission to render text. Legible product UIs come from real screenshots
+# (the factual guardrail), never from generation.
+_ANTI_TEXT_MARK = "NO TEXT ANYWHERE"
 _ANTI_TEXT = (
-    " Clean composition with no readable text, letters, words, captions, watermarks, logos, "
-    "or signage anywhere; any incidental on-screen text stays soft, blurred, and illegible."
+    f" {_ANTI_TEXT_MARK}: the image contains zero letters, words, numbers, titles, captions, "
+    "watermarks, logos, signage, labels, or user-interface text of any kind. Every screen, sign, "
+    "book, poster, and label in frame is blank, abstract, or turned away out of frame. Convey the "
+    "idea only through people, places, action, and objects."
 )
 
 
 def _augment_prompt(prompt: str) -> str:
+    """Append the absolute no-text rule exactly once.
+
+    The double-append guard keys on ``_ANTI_TEXT_MARK`` — a distinct sentinel that is
+    interpolated into ``_ANTI_TEXT`` itself, so it cannot drift out of sync when the rule is
+    re-worded. (The old guard sniffed for the incidental word "illegible", which silently
+    stopped matching the moment the wording changed.)
+    """
     p = (prompt or "").strip()
-    if "illegible" in p.lower():  # already augmented — don't double-append
+    if _ANTI_TEXT_MARK in p:  # already augmented — don't double-append
         return p
     return (p.rstrip(". ") + "." + _ANTI_TEXT).strip()
 

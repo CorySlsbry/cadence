@@ -65,12 +65,19 @@ def test_topic_for_window_extracts_content_words():
     assert "are" not in topic  # stopword dropped
 
 
-def test_caption_and_prompt_include_topic():
+def test_prompt_includes_topic_but_never_orders_the_caption_rendered():
+    """The prompt must describe the TOPIC but never hand the caption to the image model.
+
+    This used to assert the caption appeared in the prompt — the prompt literally ordered a
+    screen in-scene to display it — which is what shipped garbled on-screen text. The caption
+    still reaches ``compose_broll_image`` for the PIL-drawn overlay; it must not reach the model.
+    """
     cap = caption_for_topic("claude skills")
     assert cap == "Claude Skills"
     prompt = build_ai_prompt("claude skills", cap)
-    assert "claude skills" in prompt and "Claude Skills" in prompt
+    assert "claude skills" in prompt
     assert "hyperrealistic" in prompt.lower()
+    assert cap not in prompt  # the model is never asked to render the caption
 
 
 def test_plan_broll_windows_spacing():

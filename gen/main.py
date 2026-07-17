@@ -197,7 +197,12 @@ def animate(req: AnimateReq, x_gen_token: str | None = Header(default=None)):
     w = max(256, min(req.width, 1280)) // 16 * 16
     h = max(256, min(req.height, 1280)) // 16 * 16
     img = img.resize((w, h))
+    # Wan's causal 3D VAE compresses time 4x, so a clip must be 4k+1 frames (17, 21 ... 121).
+    # An off-grid count (e.g. a 3.2s window -> 90) makes diffusers floor the latent length and
+    # silently drop the remainder, so snap DOWN to the grid — never up, past the 121-frame
+    # context window (beyond it the model reverts/reverses the action).
     frames_n = max(17, min(req.num_frames, 121))
+    frames_n = max(17, ((frames_n - 1) // 4) * 4 + 1)
     with _gpu_lock:
         pipe = _get_pipe("wan")
         out = pipe(image=img, prompt=req.prompt, height=h, width=w,

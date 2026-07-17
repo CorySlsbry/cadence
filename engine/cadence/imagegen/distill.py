@@ -5,8 +5,16 @@ This is what makes the AI b-roll *relevant* instead of loosely-themed stock imag
 The distiller is context-aware: it knows the video's overall subject, the full
 narration, the creator's direction, and what scenes were already used — and it is
 bound by a specificity contract: when the snippet names a concrete product, tool,
-brand, or person, the scene depicts THAT THING itself (its real interface, its real
-form factor), never a generic metaphor like server racks or glowing circuitry.
+brand, or person, the scene depicts THAT THING itself (its real form factor, the
+person using it), never a generic metaphor like server racks or glowing circuitry.
+
+It is also bound by an absolute NO-TEXT contract, which outranks specificity. This
+prompt is where garbled on-screen text actually originates: it used to order the model
+to render a product's "ACTUAL user interface" — a chat thread, a CLI pane, a "model
+picker reading the model name" — so the image model was *asked* for a text-bearing
+scene and dutifully drew gibberish into it. Downstream anti-text rules can only mop
+that up; a scene that never asks for a screen is the fix. Concepts are depicted through
+people, places, action, and objects; the burned-in captions carry all the words.
 """
 
 from __future__ import annotations
@@ -21,30 +29,40 @@ _SYSTEM = (
     '{"scene": "...", "caption": "..."}. '
     "`scene` = a vivid, concrete scene that visually shows EXACTLY what the speaker is "
     "talking about in THIS snippet (subject, setting, lighting, mood — not instructions, not text). "
-    "`caption` = a punchy 2-4 word on-screen label of the snippet's core idea.\n"
+    "`caption` = a punchy 2-4 word summary of the snippet's core idea. The caption is used by the "
+    "editor OUTSIDE the image and is NEVER rendered into the scene — do not mention it in `scene`.\n"
     "\n"
-    "SPECIFICITY CONTRACT (the most important rules):\n"
-    "1. If the snippet (or the video's subject) names a SPECIFIC product, software, app, model, "
-    "brand, device, or person — the scene MUST depict that exact thing as the hero of the frame. "
-    "Software/AI tools → their ACTUAL user interface, faithfully described on a laptop/phone screen "
-    "filling most of the frame (e.g. 'Claude Code' → a dark terminal-style AI coding session: a CLI "
-    "pane with a user prompt, streaming assistant response, green/red code diff lines; 'Claude' or "
-    "'Claude Fable 5' → the Anthropic Claude chat interface: clean cream/dark panel, message thread, "
-    "model picker reading the model name; 'ChatGPT' → its chat UI; 'Stripe' → its payments dashboard "
-    "with revenue graphs). Devices → that exact device. People/companies → them in their real context.\n"
-    "2. NEVER substitute a generic metaphor (server racks, data centers, abstract circuit boards, "
+    "NO-TEXT CONTRACT (absolute — this overrides every other rule):\n"
+    "1. NEVER describe a scene containing text or a surface that would carry text. No letters, "
+    "words, numbers, headlines, titles, captions, labels, watermarks, logos, or signage — and no "
+    "chat windows, terminals, code editors, dashboards, phone/laptop screens with anything on "
+    "them, documents, books, or posters. Image models render text as garbled gibberish, so ANY "
+    "words in the frame come out wrong and ruin the shot; the finished video burns in its own "
+    "captions, so the scene never needs words. If a screen or sign is unavoidable in the setting, "
+    "say explicitly that it is blank, dark, abstract, or turned away out of frame — better still, "
+    "leave it out of the description entirely.\n"
+    "2. Depict EVERY concept through PEOPLE, PLACES, ACTION, and OBJECTS — a person doing the "
+    "thing, in a real place, with real props, real light, real emotion. 'Reviewing code' → a "
+    "developer leaning back in a dim studio, face lit by an unseen monitor. 'Payments growing' → "
+    "hands stacking coins on a worn cafe table. 'Shipping fast' → a courier sprinting a package "
+    "down a sunlit street. Never a screenshot, never an interface.\n"
+    "\n"
+    "SPECIFICITY CONTRACT (apply WITHIN the no-text rule above):\n"
+    "3. If the snippet (or the video's subject) names a SPECIFIC product, software, app, model, "
+    "brand, device, or person, keep the scene ABOUT that thing — but show its PHYSICAL, HUMAN "
+    "side: the real device on a real desk, hands using it, the person themselves in their real "
+    "context, the place the work happens. Show what the tool DOES FOR someone, never what it "
+    "LOOKS LIKE on a screen. (Real, legible product UIs are supplied separately as curated real "
+    "screenshots, so a GENERATED scene must never attempt one.)\n"
+    "4. NEVER substitute a generic metaphor (server racks, data centers, abstract circuit boards, "
     "glowing brains, robot hands) when something specific is named. Generic tech imagery is only "
     "allowed when the snippet is genuinely abstract with nothing concrete to show.\n"
-    "3. Do NOT specify readable on-screen text, labels, signage, captions, or words — image "
-    "models render text as garbled gibberish. Convey a product's UI through its LAYOUT, colors, "
-    "and shapes (panel arrangement, chart bars, message bubbles, code-diff lines), never legible "
-    "words. (Real, legible product UIs are supplied separately as real screenshots, so a GENERATED "
-    "scene must avoid fake text.)\n"
-    "4. VARIETY: if previous scenes are listed, choose a different composition, angle, and setting "
+    "5. VARIETY: if previous scenes are listed, choose a different composition, angle, and setting "
     "than those — never repeat the same desk-and-laptop framing twice in a row.\n"
-    "5. Silently FIX speech-to-text errors using the video subject as context "
+    "6. Silently FIX speech-to-text errors using the video subject as context "
     "(e.g. 'cloud code'/'cloud covert' → 'Claude Code', 'clod' → 'Claude', 'fable five' → 'Fable 5').\n"
-    "6. Honor the creator's scene direction when given — it overrides style, not specificity."
+    "7. Honor the creator's scene direction when given — it overrides style, not specificity, and "
+    "never the no-text contract."
 )
 
 
