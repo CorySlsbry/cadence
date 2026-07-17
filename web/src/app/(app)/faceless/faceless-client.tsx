@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Card } from "@/components/ui";
+import { Button, Card, Switch } from "@/components/ui";
 import AvatarStudio from "./avatar-studio";
 
 // Faceless studio: topic/script → narrated, AI-scene short. The form queues a job
@@ -907,20 +907,13 @@ export function FacelessClient({ maxLengthSec, plan }: { maxLengthSec: number; p
                       : "available on videos up to 90s — pick a shorter length"
                     : "film-grade motion from our biggest video model. Upgrade to Agency to unlock"}
                 </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={cinematic}
+                <Switch
+                  checked={cinematic}
+                  onCheckedChange={setCinematic}
                   aria-labelledby="cinematic-label"
                   disabled={!cinematicAllowed || !cinematicLengthOk}
                   title={!cinematicAllowed ? "Unlock Cinematic motion on the Agency plan" : undefined}
-                  onClick={() => setCinematic((v) => !v)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                    cinematic ? "bg-[var(--accent)]" : "bg-white/15"
-                  }`}
-                >
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${cinematic ? "translate-x-[22px]" : "translate-x-0.5"}`} />
-                </button>
+                />
               </div>
             )}
           </div>
@@ -935,16 +928,14 @@ export function FacelessClient({ maxLengthSec, plan }: { maxLengthSec: number; p
             <span id="autogen-label" className="text-xs text-white/55">
               <b className="text-white/80">Auto-generate</b> — start ~3s after your {mode === "topic" ? "topic" : "script"} is ready, no click
             </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoGen}
+            <Switch
+              checked={autoGen}
+              onCheckedChange={(v) => {
+                setAutoGen(v);
+                try { localStorage.setItem("ch_autogen", v ? "1" : "0"); } catch { /* ignore */ }
+              }}
               aria-labelledby="autogen-label"
-              onClick={() => setAutoGen((v) => { const nv = !v; try { localStorage.setItem("ch_autogen", nv ? "1" : "0"); } catch { /* ignore */ } return nv; })}
-              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${autoGen ? "bg-[var(--accent)]" : "bg-white/15"}`}
-            >
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${autoGen ? "translate-x-[22px]" : "translate-x-0.5"}`} />
-            </button>
+            />
           </div>
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-white/45">

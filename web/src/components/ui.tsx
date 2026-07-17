@@ -60,6 +60,44 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   );
 }
 
+export function Switch({
+  checked,
+  onCheckedChange,
+  className,
+  ...props
+}: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onChange" | "type"> & {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onCheckedChange(!checked)}
+      className={cn(
+        // The knob is a normal in-flow child of a padded track — never absolutely
+        // positioned. An absolute knob with no left anchor resolves its static
+        // position against the button's centred text alignment and renders ~22px
+        // too far right (escaping the track entirely when on).
+        "inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5",
+        "transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+        checked ? "bg-[var(--accent)]" : "bg-white/15",
+        className,
+      )}
+      {...props}
+    >
+      {/* track content box = 44 - 2*2 = 40px; knob 20px => 20px of travel */}
+      <span
+        className={cn(
+          "block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
+          checked && "translate-x-5",
+        )}
+      />
+    </button>
+  );
+}
+
 export function Badge({
   className,
   tone = "neutral",
