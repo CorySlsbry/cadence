@@ -32,17 +32,22 @@ video (see `main.py`), amortizing the load. Fits the async "notify when done" re
    gcloud run jobs create cadence-gen-premium \
      --project builder-ai-497610 --region us-central1 \
      --image us-central1-docker.pkg.dev/builder-ai-497610/cadence/gen-premium:v1 \
-     --cpu 20 --memory 96Gi \
+     --cpu 20 --memory 80Gi \
      --gpu 1 --gpu-type nvidia-rtx-pro-6000 --no-gpu-zonal-redundancy \
-     --task-timeout 3h --max-retries 0 --parallelism 1 --tasks 1 \
+     --task-timeout 55m --max-retries 0 --parallelism 1 --tasks 1 \
      --service-account cadence-run@builder-ai-497610.iam.gserviceaccount.com \
      --add-volume name=models,type=cloud-storage,bucket=cadence-gen-models-uscentral1,readonly=true \
      --add-volume-mount volume=models,mount-path=/models
    ```
 
-   The `cadence-run@` SA already has storage access for the models bucket; scene I/O uses the
-   storage client against whatever bucket the execution's env points at (grant objectAdmin on that
-   bucket/prefix if it's a new one).
+   ⚠️ Learned constraints (2026-07-17, hit live): at 20 CPU the memory MUST be exactly **80Gi**;
+   GPU jobs cap `--task-timeout` at **1 hour**; run these creates from **PowerShell** (Git Bash
+   mangles `mount-path=/models` into a Windows path). The 1-hour cap is why `main.py` shards the
+   manifest across tasks via `CLOUD_RUN_TASK_INDEX` — long-form runs execute with `--tasks N`
+   (quota: 3 GPUs), each task rendering `scenes[i::N]` on its own GPU.
+
+   **Scene I/O bucket** (created 2026-07-17): `gs://cadence-premium-jobs-uscentral1` —
+   `cadence-run@` has objectAdmin, 7-day auto-delete lifecycle. Models bucket stays objectViewer.
 
 ## Per-render execution
 

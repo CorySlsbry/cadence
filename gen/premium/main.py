@@ -95,10 +95,20 @@ def main() -> int:
     manifest = json.loads(
         client.bucket(in_bucket).blob(f"{in_prefix}/manifest.json").download_as_bytes())
     scenes = manifest.get("scenes") or []
+    # GPU jobs are capped at a 1-hour task timeout, so long manifests shard across
+    # parallel tasks (--tasks N): task i renders scenes[i::N], each loading its own
+    # model copy on its own GPU. results.json is written per-task (suffix _tK when
+    # sharded) so parallel tasks never clobber each other; the caller merges.
+    task_idx = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
+    task_cnt = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
+    total = len(scenes)
+    if task_cnt > 1:
+        scenes = scenes[task_idx::task_cnt]
     if not scenes:
-        print("manifest has no scenes", flush=True)
-        return 1
-    print(f"[a14b] {len(scenes)} scene(s) @ {WIDTH}x{HEIGHT} {FRAMES}f {STEPS}steps", flush=True)
+        print(f"manifest has no scenes for task {task_idx}/{task_cnt}", flush=True)
+        return 1 if total == 0 else 0
+    print(f"[a14b] task {task_idx}/{task_cnt}: {len(scenes)}/{total} scene(s) "
+          f"@ {WIDTH}x{HEIGHT} {FRAMES}f {STEPS}steps", flush=True)
 
     import torch
     from diffusers.utils import export_to_video
@@ -139,8 +149,10 @@ def main() -> int:
         finally:
             torch.cuda.empty_cache()
 
-    client.bucket(out_bucket).blob(f"{out_prefix}/results.json").upload_from_string(
-        json.dumps({"scenes": results, "ok": ok, "total": len(scenes)}, indent=2),
+    results_name = "results.json" if task_cnt == 1 else f"results_t{task_idx}.json"
+    client.bucket(out_bucket).blob(f"{out_prefix}/{results_name}").upload_from_string(
+        json.dumps({"task": task_idx, "task_count": task_cnt,
+                    "scenes": results, "ok": ok, "total": len(scenes)}, indent=2),
         content_type="application/json")
     print(f"[a14b] done: {ok}/{len(scenes)} rendered", flush=True)
     return 0 if ok > 0 else 1
