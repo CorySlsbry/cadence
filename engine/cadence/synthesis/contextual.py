@@ -297,8 +297,16 @@ def build_ai_broll(
                         asset_bytes, os.path.join(out_dir, f"ai_broll_{idx}.png"),
                         width=width, height=height,
                     )
+                    # A curated screenshot has no generated prompt, so its asset key is its
+                    # own identity (key + variant + alt). That key is what lets the MOTION
+                    # clip animated from it be reused by a later render that names the same
+                    # product. Measured safe at the library's 0.92 threshold: the closest
+                    # realistic pair (two products sharing a "claude-" prefix) embeds at
+                    # 0.86 cosine, and this richer form at 0.80 — no cross-asset match.
+                    fa_key = " ".join(p for p in (fa.key, fa.variant, fa.alt) if p)
                     inserts.append(BrollInsert(image_path=path, start=start, end=end,
-                                               motion=KenBurns.ZOOM_IN, source="factual"))
+                                               motion=KenBurns.ZOOM_IN, source="factual",
+                                               prompt=f"curated factual screenshot: {fa_key}"))
                     print(f"[broll] factual guardrail: '{fa.key}' -> "
                           f"{os.path.basename(path)} @ {start:.1f}-{end:.1f}s", flush=True)
                     # A curated real screenshot is a hard cut, not a generated film frame — break
@@ -341,7 +349,12 @@ def build_ai_broll(
             res.image_bytes, caption, os.path.join(out_dir, f"ai_broll_{idx}.png"),
             overlay_text=overlay_text, width=width, height=height,
         )
-        inserts.append(BrollInsert(image_path=path, start=start, end=end, motion=motion))
+        # Carry the EXACT prompt this scene was generated from (direction included). The
+        # worker keys the motion-clip library on it: the video-level anim_prompt is identical
+        # for every scene of a video, so embedding THAT would match every scene to one clip
+        # and turn the whole render into the same footage. See worker.asset_library.ClipLibrary.
+        inserts.append(BrollInsert(image_path=path, start=start, end=end, motion=motion,
+                                   prompt=prompt))
         # Bootstrap the world anchor from scene 0, then feed THIS scene forward as the next scene's
         # continuity init — with a periodic hard reset so img2img drift can never run away.
         if chain_enabled:

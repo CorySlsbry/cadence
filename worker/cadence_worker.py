@@ -165,6 +165,86 @@ class SupabaseCostLedger:
         return float(r.data) if r.data is not None else self.spent()
 
 
+def _clip_style_key(lib_style: str, *, cinematic: bool) -> str:
+    """The MOTION CLIP library's style key: the image key PLUS the model that rendered it.
+
+    A clip is not model-portable the way a still is. FastWan2.2-TI2V-5B (the free /animate lane)
+    and Wan 2.2 I2V-A14B (the paid "Cinematic motion" lane) produce visibly different motion, so
+    serving a FastWan clip into a paid A14B render silently downgrades exactly what an Agency user
+    paid for, and serving an A14B clip into a free render gives the premium lane away. Pinning the
+    model in the key makes those rows unreachable from each other — `match_scene_assets` filters
+    `style = p_style`. Same key-suffix pattern as the existing |d{direction} hash.
+
+    Deliberately a SUFFIX on a copy: `lib_style` itself must keep addressing the image library, or
+    every still ever stored is orphaned.
+    """
+    return f"{lib_style}|m{'a14b' if cinematic else 'fastwan'}"
+
+
+def _plan_motion_scenes(inserts, *, clip_lib, ledger, tmp: str,
+                        clip_w: int, clip_h: int):
+    """Decide which faceless scenes we PAY to animate — before a second of GPU time.
+
+    Serialized on the main thread on purpose, for two reasons: ``ClipLibrary._used_ids`` is not
+    thread-safe, and a library HIT has to be known BEFORE the pre-charge so it can cost the user
+    0 tokens (the library's whole contract — see cadence.imagegen.cache). So: look every scene up
+    first, then pre-charge 2 tokens for each scene that MISSED. ``BudgetExceeded`` stops the loop
+    and the remaining scenes stay stills — exactly as before the clip library existed.
+
+    Returns ``(clips, from_library, to_animate)``:
+
+    * ``clips``        — ``{scene index: local mp4 path}``, already satisfied by the library.
+    * ``from_library`` — the indices in ``clips`` that CAME from the library, so the caller never
+      donates them back (they are already stored; re-inserting would just duplicate rows).
+    * ``to_animate``   — the paid misses, in scene order, for the animate lanes.
+
+    ``clip_lib=None`` (kill-switch off, no Gemini key, or the library failed to construct) makes
+    this the pre-library behaviour byte for byte: charge every scene, animate every scene.
+    """
+    from cadence.imagegen.ledger import BudgetExceeded
+
+    clips: dict[int, str] = {}      # scene index -> motion clip path (absent -> still)
+    from_library: set[int] = set()
+    to_animate: list[int] = []
+    for k, ins in enumerate(inserts):
+        hit = None
+        if clip_lib is not None and ins.prompt:
+            try:
+                # min_seconds = this scene's own window, so a hit always covers its segment (a
+                # shorter clip would just hold a frozen tail — see build_background_video_mixed).
+                hit = clip_lib.lookup(ins.prompt, min_seconds=float(ins.end) - float(ins.start),
+                                      width=clip_w, height=clip_h)
+            except Exception as exc:  # noqa: BLE001 - ClipLibrary already fails open; belt-and-braces
+                print(f"[worker] faceless: clip library lookup raised for scene {k} "
+                      f"({exc!r}); animating", flush=True)
+        if hit:
+            try:
+                clip_path = os.path.join(tmp, f"scene_motion_{k}.mp4")
+                with open(clip_path, "wb") as fh:
+                    fh.write(hit)
+                clips[k] = clip_path
+                from_library.add(k)
+                continue  # 0 tokens, 0 GPU — this scene never reaches the animate path
+            except Exception as exc:  # noqa: BLE001 - can't stage it -> just animate it normally
+                print(f"[worker] faceless: clip library hit unusable for scene {k} "
+                      f"({exc!r}); animating", flush=True)
+        # Pre-charge (serialized, main thread) so the per-user token budget gates BEFORE we spend
+        # L4 time: only paid-for scenes are submitted; the rest stay stills. Keeps every ledger
+        # call on one thread (no lock) and preserves charge-before-animate semantics.
+        try:
+            ledger.charge(0.05)
+            ledger.charge(0.05)  # 2 tokens per animated scene
+            to_animate.append(k)
+        except BudgetExceeded:
+            print(f"[worker] faceless: token/AI budget hit at scene {k}; "
+                  f"rest stay stills", flush=True)
+            break
+    if from_library:
+        print(f"[worker] faceless: clip library covered {len(from_library)}/{len(inserts)} "
+              f"scene(s) — 0 tokens, 0 GPU", flush=True)
+    return clips, from_library, to_animate
+
+
 class Worker:
     def __init__(self) -> None:
         self.supabase: Client = create_client(
@@ -641,6 +721,7 @@ class Worker:
             import hashlib
 
             lib_style = f"{lib_style}|d{hashlib.sha1(scene_direction.encode()).hexdigest()[:8]}"
+        clip_style = _clip_style_key(lib_style, cinematic=cinematic)
         inserts = build_ai_broll(
             words_out, dur,
             self._image_generator(ctrl.broll_quality, gkey, gbyok, style=lib_style),
@@ -667,7 +748,6 @@ class Worker:
             # 2 tokens; a failed/over-budget scene degrades to its still (graceful, per-scene).
             import concurrent.futures
 
-            from cadence.imagegen.ledger import BudgetExceeded
             from cadence.imagegen.selfhost import animate_image
             from cadence.matte.replace import build_background_video_mixed
 
@@ -719,21 +799,28 @@ class Worker:
                                   f"retrying once", flush=True)
                 raise last_exc  # type: ignore[misc]  # loop always runs -> always set
 
-            # Pre-charge (serialized, main thread) so the per-user token budget gates BEFORE we
-            # spend L4 time: only paid-for scenes are submitted; the rest stay stills. Keeps every
-            # ledger call on one thread (no lock) and preserves charge-before-animate semantics.
-            to_animate: list[int] = []
-            for k in range(len(inserts)):
+            # CLIP LIBRARY: a motion clip is the most expensive thing we make (~2 min of GPU per
+            # scene), so reusing one is the biggest single win available. Keyed on each scene's OWN
+            # prompt (BrollInsert.prompt) — NOT anim_prompt, which is identical for every scene of a
+            # video and would collapse the whole render onto one clip. Kill-switch: CADENCE_CLIP_LIBRARY=0.
+            clip_lib = None
+            if os.environ.get("CADENCE_CLIP_LIBRARY", "1") != "0" and gkey:
                 try:
-                    anim_ledger.charge(0.05)
-                    anim_ledger.charge(0.05)  # 2 tokens per animated scene
-                    to_animate.append(k)
-                except BudgetExceeded:
-                    print(f"[worker] faceless: token/AI budget hit at scene {k}; "
-                          f"rest stay stills", flush=True)
-                    break
+                    from asset_library import ClipLibrary
 
-            clips: dict[int, str] = {}  # scene index -> motion clip path (absent -> still)
+                    clip_lib = ClipLibrary(self.supabase, gkey, user_id=self._current_user_id,
+                                           job_id=self._current_job_id, style=clip_style)
+                except Exception as exc:  # noqa: BLE001 - the library is an optimization only
+                    print(f"[worker] clip library unavailable ({exc!r}); animating every scene",
+                          flush=True)
+            # The lane's native clip size (the compositor rescales into the 1080x1920 frame, so
+            # this only has to carry ORIENTATION correctly — a landscape clip must never be
+            # stretched into a portrait slot).
+            clip_w, clip_h = (720, 1280) if cinematic else (704, 1280)
+            clips, from_library, to_animate = _plan_motion_scenes(
+                inserts, clip_lib=clip_lib, ledger=anim_ledger, tmp=tmp,
+                clip_w=clip_w, clip_h=clip_h,
+            )
             # PREMIUM "Cinematic motion" lane (Agency plan): render the paid scenes on the
             # cadence-gen-premium Cloud Run JOB (Wan 2.2 I2V-A14B) instead of per-scene FastWan
             # /animate calls. Token charging is UNCHANGED — the pre-charge loop above already
@@ -751,14 +838,17 @@ class Worker:
                           f"exceeds the {prem_cap}-scene cap; using /animate", flush=True)
                 else:
                     try:
-                        clips = self._animate_scenes_premium(
+                        # update(), not assign: `clips` already holds the library hits, and they
+                        # must survive this lane. _animate_scenes_premium builds its dict locally
+                        # and either returns it whole or raises, so a failure leaves `clips`
+                        # exactly as it was — the hits stand, the misses fall through to /animate.
+                        clips.update(self._animate_scenes_premium(
                             [(k, inserts[k]) for k in to_animate], anim_prompt,
-                            topic_title, tmp)
+                            topic_title, tmp))
                         premium_done = True
                     except Exception as exc:  # noqa: BLE001 - premium lane down -> FastWan fallback
                         print(f"[worker] faceless: cinematic lane failed ({exc!r}); "
                               f"falling back to /animate", flush=True)
-                        clips = {}
             if to_animate and not premium_done:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
                     futs = {pool.submit(_animate_one, k, inserts[k]): k for k in to_animate}
@@ -783,14 +873,39 @@ class Worker:
                             self._update(self._current_job_id,
                                          progress=round(0.55 + 0.25 * done / len(to_animate), 2))
 
+            # Donate every NEWLY generated clip back to the library — both lanes, one place. Never
+            # re-save a library hit (it is already stored; re-inserting would just duplicate rows).
+            # Duration/size come from the ARTIFACT via ffprobe, not from the seconds we asked for:
+            # both lanes clamp frames to their model's own ceiling (FastWan 121@24fps, A14B
+            # 81@16fps), so a clip is often shorter than requested. Recording the requested length
+            # would let a future lookup accept a clip that cannot cover its window — precisely the
+            # frozen-tail defect min_seconds exists to prevent. Probing also keeps this correct for
+            # both lanes without duplicating either one's frame math.
+            if clip_lib is not None:
+                for k, clip_path in sorted(clips.items()):
+                    if k in from_library or not inserts[k].prompt:
+                        continue
+                    try:
+                        info = probe_media(clip_path, self.ff)
+                        with open(clip_path, "rb") as fh:
+                            clip_lib.save(inserts[k].prompt, fh.read(), seconds=info.duration,
+                                          width=info.width, height=info.height)
+                    except Exception as exc:  # noqa: BLE001 - a donation must never fail a render
+                        print(f"[worker] faceless: clip library save skipped for scene {k} "
+                              f"({exc!r})", flush=True)
+
             # Reassemble in ORIGINAL scene order — compositing depends on scene sequence.
             items = [(ins, clips.get(k)) for k, ins in enumerate(inserts)]
             animated_scenes = len(clips)
             self._faceless_stats = {
+                # "animated" = scenes that carry real motion, whether we rendered the clip now or
+                # reused a stored one; "degraded" = the rest, which fell back to their still.
                 "animated_scenes": animated_scenes,
                 "degraded_scenes": len(inserts) - animated_scenes,  # scenes that fell back to still
                 "scenes_total": len(inserts),
             }
+            if from_library:  # observability — how much GPU/token spend the library saved
+                self._faceless_stats["reused_scenes"] = len(from_library)
             if premium_done:  # observability only — which motion engine produced the clips
                 self._faceless_stats["cinematic"] = True
             build_background_video_mixed(items, dur, bg, ff=self.ff, width=w, height=h, fps=fps)

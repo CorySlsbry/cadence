@@ -668,6 +668,11 @@ class BrollInsert:
     motion: KenBurns = KenBurns.ZOOM_IN
     fade: float = 0.18      # crossfade in/out at the edges (seconds)
     source: str = "ai"      # provenance: "ai" (generated) | "factual" (curated real asset) | "brand"
+    # The exact prompt this scene was generated from — the asset-library key for reusing the
+    # MOTION CLIP animated from it (worker.asset_library.ClipLibrary). Transient/in-process:
+    # deliberately NOT in to_dict/from_dict, since a serialized plan has no use for ~600 chars
+    # x N scenes of prompt. Defaulted, so every existing construction site is unchanged.
+    prompt: str = ""
 
     @property
     def duration(self) -> float:
