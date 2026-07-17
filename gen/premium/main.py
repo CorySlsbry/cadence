@@ -81,7 +81,7 @@ def _download_prefix(gs_uri: str, dest: str) -> None:
             raise RuntimeError(f"download failed for {name}: {res!r}")
     gb = sum(b.size or 0 for b in blobs) / 1e9
     dt = time.time() - t0
-    print(f"[a14b] downloaded {gb:.1f} GB ({len(names)} files) in {dt:.0f}s "
+    print(f"[a14b] downloaded {gb:.1f} GB ({len(rel_names)} files) in {dt:.0f}s "
           f"({gb/max(dt,1e-9):.2f} GB/s)", flush=True)
 
 
