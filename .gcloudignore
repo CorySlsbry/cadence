@@ -1,0 +1,24 @@
+# Keep the worker build context (repo root -> worker/Dockerfile) lean. The worker image only
+# COPYs worker/ + engine/, so everything else is excluded to avoid uploading web/node_modules,
+# the .git history, baked media, etc. (This file is only consulted for ROOT `gcloud builds
+# submit` — a `gcloud builds submit web` reads web/'s own ignore rules.)
+.git/
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+web/
+brand/
+scripts/
+**/frames-out/
+**/__pycache__/
+**/*.pyc
+.venv/
+**/.venv/
+venv/
+**/.pytest_cache/
+.pytest_cache/
+*.mp4
+*.webm
+*.b64
+*.log

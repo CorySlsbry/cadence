@@ -1,0 +1,58 @@
+name: cadence_app
+description: "Cadence — premium AI short-form video automation (Windows desktop + Android)."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+# --- Architecture note ---------------------------------------------------------
+# The Flutter app is the CAPTURE + CONTROL + PREVIEW surface. ALL heavy analysis
+# and rendering runs in the Python `cadence` engine, reached over a localhost HTTP
+# sidecar (see lib/src/core/engine_client.dart). FFmpeg is split by platform behind
+# one VideoEngine interface (lib/src/video/) because ffmpeg_kit_flutter was retired
+# in early 2025: Android uses the maintained fork, Windows bundles a sidecar binary.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management — Riverpod v3 AsyncNotifier models encode/analyze jobs cleanly.
+  flutter_riverpod: ^3.0.0
+  riverpod_annotation: ^3.0.0
+
+  # Engine HTTP client + JSON.
+  http: ^1.2.2
+  path: ^1.9.0
+  path_provider: ^2.1.4
+
+  # Native camera capture (high-bitrate 60fps). CameraX backend on Android.
+  camera: ^0.11.0+2
+  camera_android_camerax: ^0.6.10
+
+  # FFmpeg on Android (maintained fork; the original ffmpeg_kit was retired 2025-01).
+  # Pick the LGPL "min-gpl"/"https" variant to avoid GPL contamination.
+  ffmpeg_kit_flutter_new: ^1.6.0
+
+  # File pickers (reference video / brand assets) + opening results.
+  file_picker: ^8.1.2
+  cross_file: ^0.3.4+2
+
+  # On-device ML (optional, all platforms incl. Windows) for future local inference.
+  flutter_onnxruntime: ^1.4.1
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.13
+  riverpod_generator: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # On Windows, the engine sidecar binaries are bundled here and launched via
+    # Process.start (see lib/src/core/engine_process.dart).
+    - assets/bin/

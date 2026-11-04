@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CloutHook — Logo</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;700;800&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--grad:linear-gradient(100deg,#FF5A7A,#C24DD0 52%,#9B5BE0)}
+  body{margin:0;background:radial-gradient(60% 40% at 50% 0%,rgba(155,91,224,.08),transparent 60%),#07060C;color:#F4F2F7;font-family:'Inter',system-ui,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:54px 26px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:#938CA6;font-weight:600}
+  h1{font-family:'Geist';font-weight:800;font-size:clamp(24px,4vw,36px);margin:12px 0 26px}
+  .row{display:flex;flex-wrap:wrap;gap:22px;margin-bottom:22px}
+  .panel{background:#100E18;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:34px 30px;display:flex;align-items:center;justify-content:center;gap:18px;flex:1;min-width:280px;position:relative}
+  .panel.light{background:#F4F2F7}
+  .tag{position:absolute;left:16px;top:13px;font-family:'Geist';font-size:11px;font-weight:700;color:#C77DFF;letter-spacing:.05em}
+  .panel.light .tag{color:#8B3FD0}
+  .badge{flex:none}
+  .wm{font-family:'Geist';font-weight:800;letter-spacing:-.02em;line-height:1}
+  .wm .c{color:#F4F2F7}
+  .panel.light .wm .c{color:#0B0912}
+  .wm .h{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .stacked{display:flex;flex-direction:column;align-items:center;gap:12px}
+  .stacked .tagline{font-family:'Geist';font-weight:500;font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:#9C93B0}
+  .icons{display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap}
+  .icons figure{margin:0;text-align:center}
+  .icons img{border-radius:22%;display:block;box-shadow:0 16px 40px -18px rgba(180,60,140,.5)}
+  .icons figcaption{margin-top:8px;font-size:11px;color:#8C84A0}
+  .note{color:#938CA6;font-size:13.5px;margin-top:14px;line-height:1.6}.note b{color:#E9B7FF}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">CloutHook · Logo system</div>
+  <h1>The mark, the wordmark, the lockup</h1>
+
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <linearGradient id="chg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF5A7A"/><stop offset="52%" stop-color="#C24DD0"/><stop offset="100%" stop-color="#9B5BE0"/></linearGradient>
+  </defs></svg>
+
+  <div class="row">
+    <div class="panel">
+      <span class="tag">Primary lockup · dark</span>
+      <span class="badge"><svg width="60" height="60" viewBox="0 0 100 100"><rect width="100" height="100" rx="24" fill="url(#chg)"/><g fill="#fff"><path d="M42.7 64.1 A19 19 0 1 1 42.7 35.9" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><rect x="56" y="31" width="9" height="38" rx="4.5"/><rect x="80" y="31" width="9" height="38" rx="4.5"/><rect x="56" y="45" width="33" height="9" rx="4.5"/></g></svg></span>
+      <span class="wm" style="font-size:48px"><span class="c">Clout</span><span class="h">Hook</span></span>
+    </div>
+    <div class="panel light">
+      <span class="tag">On light</span>
+      <svg width="56" height="56" viewBox="0 0 100 100"><rect width="100" height="100" rx="24" fill="url(#chg)"/><g fill="#fff"><path d="M42.7 64.1 A19 19 0 1 1 42.7 35.9" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><rect x="56" y="31" width="9" height="38" rx="4.5"/><rect x="80" y="31" width="9" height="38" rx="4.5"/><rect x="56" y="45" width="33" height="9" rx="4.5"/></g></svg>
+      <span class="wm" style="font-size:44px"><span class="c">Clout</span><span class="h">Hook</span></span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="panel">
+      <span class="tag">Stacked + tagline (concept 08)</span>
+      <div class="stacked">
+        <svg width="66" height="66" viewBox="0 0 100 100"><rect width="100" height="100" rx="24" fill="url(#chg)"/><g fill="#fff"><path d="M42.7 64.1 A19 19 0 1 1 42.7 35.9" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><rect x="56" y="31" width="9" height="38" rx="4.5"/><rect x="80" y="31" width="9" height="38" rx="4.5"/><rect x="56" y="45" width="33" height="9" rx="4.5"/></g></svg>
+        <span class="wm" style="font-size:40px"><span class="c">Clout</span><span class="h">Hook</span></span>
+        <span class="tagline">Hook first · Clout follows</span>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="tag">Favicon &amp; app icons (live PNGs)</span>
+      <div class="icons">
+        <figure><img src="../icons/icon-512.png" width="96" height="96"><figcaption>app · 512</figcaption></figure>
+        <figure><img src="../icons/apple-touch-icon.png" width="60" height="60"><figcaption>apple · 180</figcaption></figure>
+        <figure><img src="../icons/favicon-32.png" width="32" height="32"><figcaption>favicon · 32</figcaption></figure>
+        <figure><img src="../icons/favicon-16.png" width="16" height="16"><figcaption>16</figcaption></figure>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">Logo = <b>concept #3</b> (CH gradient badge + wordmark) with the <b>#8 tagline</b>. The CH monogram is geometric (font-independent). Icons are generated in <b>brand/icons/</b> and already copied into the web app (<b>favicon.ico, icon.png, apple-icon.png</b> + PWA manifest). The app theme has been recolored to the brand palette and the logo is wired into every header.</p>
+</div>
+</body>
+</html>

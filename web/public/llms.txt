@@ -1,0 +1,33 @@
+# CloutHook
+
+CloutHook is a premium AI short-form video SaaS that turns one raw take into a studio-grade vertical short (1080×1920, up to 60fps). Record once and CloutHook auto-edits, captions, adds b-roll, generates faceless or photoreal-avatar videos, auto-clips long footage into ranked shorts, and posts straight to every major platform.
+
+## Key pages
+- [/](https://clouthook.com/) — Home: positioning, core features, and how CloutHook turns one take into a finished short.
+- [/pricing](https://clouthook.com/pricing) — Plans and token pricing (Free $0, Base $30, Creator $79) with no per-seat fees.
+- [/score](https://clouthook.com/score) — Free Viral Score: paste a TikTok/Reels/YouTube Short link and get an instant 0-10 AI score on hook, pacing, captions, visuals, format, and length, plus the fixes.
+- [/how-the-viral-score-works](https://clouthook.com/how-the-viral-score-works) — How the Viral Score is calculated: the six weighted factors and what each measures.
+- [/faq](https://clouthook.com/faq) — Common questions about features, tokens, voices, posting, and the affiliate program.
+- [/clouthook-vs-opusclip](https://clouthook.com/clouthook-vs-opusclip) — How CloutHook compares to OpusClip for AI short-form video.
+- [/clouthook-vs-submagic](https://clouthook.com/clouthook-vs-submagic) — How CloutHook compares to Submagic (captions + clips, team-oriented).
+- [/clouthook-vs-descript](https://clouthook.com/clouthook-vs-descript) — How CloutHook compares to Descript (text-based/podcast editor).
+- [/blog](https://clouthook.com/blog) — Guides on AI short-form video: faceless shorts, AI avatars, auto-clipping, captions, cross-posting, b-roll, pricing, and OpusClip alternatives.
+- [/privacy](https://clouthook.com/privacy) — Privacy policy, including data export and account deletion.
+- [/terms](https://clouthook.com/terms) — Terms of service.
+
+## What it does
+- Record once → auto-edited studio short: cleanup, captions, b-roll, and stitching from a single raw take.
+- Faceless videos: script → TTS voice → AI scenes → karaoke captions.
+- Photoreal "clone yourself" AI avatar from a recording or photo (record on your phone via a QR hand-off).
+- Auto-reframe 16:9 → 9:16 with face and subject tracking.
+- Auto-clip a long video into ranked shorts.
+- Direct posting to X, Instagram, Facebook, LinkedIn, YouTube, and TikTok.
+- Bring-your-own ElevenLabs voice plus voice cloning.
+- Affiliate program with 30% recurring commission.
+
+## Pricing and tokens
+- 1 token = 1 AI scene; an animated scene = 3 tokens; a photoreal avatar video = 8 tokens (Creator plan, up to 20/month).
+- Free $0/mo (25 tokens) · Base $30/mo (200 tokens) · Creator $79/mo (560 tokens). No per-seat fees.
+
+## About
+Operated by Salisbury Bookkeeping & Accounting Services LLC. Support: support@Neuron-HQ.com.

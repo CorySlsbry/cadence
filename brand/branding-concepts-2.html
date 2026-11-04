@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CloutHook — Branding Concepts · Set 2 (Bold / Intertwined)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#050308; --panel:#0C0814; --line:rgba(255,255,255,.08); --paper:#ECE7F2; --muted:#9A93A6; }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(60% 45% at 50% -5%, rgba(124,58,237,.10), transparent 60%),
+      radial-gradient(45% 35% at 88% 8%, rgba(200,30,74,.07), transparent 60%),
+      var(--bg);
+    color:var(--paper);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1280px;margin:0 auto;padding:0 26px}
+  header.top{padding:60px 0 24px}
+  .eyebrow{font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  h1{font-family:'Archivo',sans-serif;font-weight:800;font-size:clamp(30px,5vw,52px);letter-spacing:-.015em;margin:14px 0 0;text-transform:uppercase;
+     background:linear-gradient(100deg,#FF5A6E,#7C3AED 52%,#4F46E5);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{color:var(--muted);max-width:700px;margin-top:16px;line-height:1.65;font-size:15.5px}
+  .status{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+  .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:12.5px;color:var(--muted)}
+  .chip b{color:var(--paper);font-weight:600}
+  .chip .g{width:7px;height:7px;border-radius:2px;background:#3FA66B;box-shadow:0 0 10px #3FA66B}
+  .howto{margin-top:18px;font-size:13.5px;color:var(--muted)}
+  .howto b{color:#C9A8FF;font-weight:600}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:30px 26px;padding:30px 0 90px}
+  .card{display:flex;flex-direction:column}
+  .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:16px;overflow:hidden;border:1px solid var(--line);
+     box-shadow:0 24px 60px -30px rgba(124,58,237,.55), inset 0 0 0 1px rgba(255,255,255,.02)}
+  .frame svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .logo{position:absolute;z-index:3;text-align:center;width:90%;left:50%;transform:translateX(-50%);pointer-events:none}
+  .wm{line-height:.98;font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-.01em}
+  .wm.up{text-transform:uppercase;letter-spacing:.05em}
+  .wm.arch{font-family:'Archivo',sans-serif;font-weight:800}
+  .grad{background:linear-gradient(100deg,#FF6172,#8B43F0 52%,#4F46E5);-webkit-background-clip:text;background-clip:text;color:transparent;
+     filter:drop-shadow(0 0 12px rgba(124,58,237,.6))}
+  .steel{color:#EFEAF6;filter:drop-shadow(0 0 11px rgba(124,58,237,.55))}
+  .gilt{background:linear-gradient(100deg,#EBCB82,#B8862F);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(200,150,50,.5))}
+  .tag{font-family:'Space Grotesk';font-weight:500;font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:#C4B2D8;
+     filter:drop-shadow(0 0 7px rgba(124,58,237,.6));margin-top:9px}
+  .cap{padding:15px 4px 0}
+  .cap .n{font-family:'Space Grotesk';font-size:12px;font-weight:700;color:#B583FF;letter-spacing:.06em}
+  .cap h3{font-family:'Archivo',sans-serif;font-weight:700;font-size:17px;margin:5px 0 0;letter-spacing:-.01em}
+  .cap p{color:var(--muted);font-size:13px;line-height:1.55;margin:7px 0 0}
+  .cap .best{color:#8C84A0;font-size:11.5px;margin-top:8px}
+  .cap .best b{color:#C2B4D6;font-weight:600}
+  footer{border-top:1px solid var(--line);padding:32px 0 80px;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  footer .grad2{font-family:'Archivo';font-weight:800;background:linear-gradient(100deg,#FF6172,#4F46E5);-webkit-background-clip:text;background-clip:text;color:transparent}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">CloutHook · Brand Concepts — Set 2</div>
+    <h1>Bolder · Intertwined</h1>
+    <p class="lede">Same botanical world, harder edge. Every stem is now <b style="color:#9FE6BC">three strands intertwined</b> — a braided vine, not a single line. Softer daisies give way to <b style="color:#FF8A98">spiked architectural blooms</b>, blade leaves and thorns, on a deeper oxblood / indigo / deep-violet palette over near-black, with a more electric glow. Set in a strong grotesk, not a script serif. Less pretty, more striking.</p>
+    <div class="status">
+      <span class="chip"><span class="g"></span> Domain: <b>clouthook.com</b></span>
+      <span class="chip">Stems: <b>3-strand braid</b></span>
+      <span class="chip">Palette: <b>oxblood · indigo · violet · ember</b></span>
+    </div>
+    <p class="howto">Tell me <b>"refine #N"</b> (or mix with Set 1, e.g. "Set 2 #1 braid + Set 1 #5 wreath"), and whether to push the braid <b>tighter/looser</b> or the blooms <b>bigger/sparser</b>. I'll export the winner as a 1080×1920 frame (opaque + transparent-center) + animated WebM.</p>
+  </header>
+
+  <div class="grid" id="grid"></div>
+
+  <footer>
+    <span>CloutHook — Set 2 · bold / intertwined · v1</span>
+    <span class="grad2">clouthook.com</span>
+  </footer>
+</div>
+
+<script>
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const W=400,H=711;
+
+function defs(i,bg){
+  return `<defs>
+    <radialGradient id="bg${i}" cx="50%" cy="36%" r="82%">
+      <stop offset="0%" stop-color="${bg[0]}"/><stop offset="60%" stop-color="${bg[1]}"/><stop offset="100%" stop-color="${bg[2]}"/>
+    </radialGradient>
+    <radialGradient id="pr${i}" cx="38%" cy="30%" r="74%">
+      <stop offset="0%" stop-color="#FF7A6B"/><stop offset="42%" stop-color="#D11A3C"/><stop offset="100%" stop-color="#660A20"/>
+    </radialGradient>
+    <radialGradient id="pp${i}" cx="38%" cy="30%" r="74%">
+      <stop offset="0%" stop-color="#C39BF5"/><stop offset="44%" stop-color="#7C3AED"/><stop offset="100%" stop-color="#36127A"/>
+    </radialGradient>
+    <radialGradient id="pi${i}" cx="38%" cy="30%" r="74%">
+      <stop offset="0%" stop-color="#9DB0FF"/><stop offset="46%" stop-color="#4F46E5"/><stop offset="100%" stop-color="#211C6E"/>
+    </radialGradient>
+    <linearGradient id="sg${i}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2FB46A"/><stop offset="100%" stop-color="#0A4A22"/>
+    </linearGradient>
+    <linearGradient id="rp${i}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D11A3C"/><stop offset="50%" stop-color="#7C3AED"/><stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+    <radialGradient id="ctr${i}" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFE0A0"/><stop offset="100%" stop-color="#E07A1E"/>
+    </radialGradient>
+    <filter id="gf${i}" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="2.8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="gs${i}" x="-70%" y="-70%" width="240%" height="240%">
+      <feGaussianBlur stdDeviation="1.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="gbig${i}" x="-130%" y="-130%" width="360%" height="360%">
+      <feGaussianBlur stdDeviation="5.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>`;
+}
+function smooth(pts){
+  if(pts.length<2)return'';
+  let d=`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6;
+    const c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;
+    d+=` C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+// ---- THE BRAID: 3 strands intertwined around a base polyline ----
+function braid(base,o,i){
+  o=Object.assign({amp:9,twists:9,sw:3.4},o);
+  const n=base.length-1;
+  const norm=base.map((p,k)=>{
+    const a=base[Math.max(0,k-1)],b=base[Math.min(n,k+1)];
+    let tx=b[0]-a[0],ty=b[1]-a[1];const L=Math.hypot(tx,ty)||1;return[-ty/L,tx/L];
+  });
+  const strands=[0,1,2].map(s=>base.map((p,k)=>{
+    const t=k/n,off=o.amp*Math.sin(t*o.twists*Math.PI*2 + s*2*Math.PI/3);
+    return[p[0]+norm[k][0]*off,p[1]+norm[k][1]*off];
+  }));
+  let s='';
+  strands.forEach(st=>{s+=`<path d="${smooth(st)}" fill="none" stroke="#062510" stroke-width="${o.sw+2.4}" stroke-linecap="round" opacity=".75"/>`;});
+  strands.forEach(st=>{s+=`<path d="${smooth(st)}" fill="none" stroke="url(#sg${i})" stroke-width="${o.sw}" stroke-linecap="round" filter="url(#gs${i})" opacity=".97"/>`;});
+  return {svg:s,base};
+}
+// ---- bold spiked bloom ----
+function bloom(x,y,sc,kind,r,i,strong){
+  const grad=kind==='red'?`url(#pr${i})`:kind==='purple'?`url(#pp${i})`:`url(#pi${i})`;
+  const n=9+((r()*4)|0);
+  const filt=strong?`gbig${i}`:`gf${i}`;
+  let g=`<g transform="translate(${x},${y}) rotate(${(r()*40)|0}) scale(${sc})" filter="url(#${filt})">`;
+  for(let k=0;k<n;k++){const a=(360/n)*k+(r()*6-3);g+=`<g transform="rotate(${a})"><path d="M0 0 L-1.8 -12.5 L0 -17.5 L1.8 -12.5 Z" fill="${grad}"/></g>`;}
+  g+=`<circle r="3.1" fill="url(#ctr${i})"/><circle r="1.5" fill="#240711"/></g>`;
+  return g;
+}
+function bladeLeaf(x,y,ang,sc,i){
+  return `<g transform="translate(${x},${y}) rotate(${ang}) scale(${sc})" filter="url(#gs${i})"><path d="M0 0 L10 -3.4 L22 0 L10 3.4 Z" fill="url(#sg${i})"/><path d="M0 0 L22 0" stroke="#0B5A2A" stroke-width=".7"/></g>`;
+}
+function thorn(x,y,ang,sc,i){return `<g transform="translate(${x},${y}) rotate(${ang}) scale(${sc})"><path d="M0 0 L3.6 -8 L1 -1.4 Z" fill="#0E5A2C" filter="url(#gs${i})"/></g>`;}
+function colorPick(r,redBias){const v=r();return v<redBias?'red':(v<redBias+0.32?'purple':'indigo');}
+
+function edgeBase(edge,inset,n){
+  const p=[];
+  for(let k=0;k<=n;k++){const t=k/n;let x,y;
+    if(edge==='top'){x=inset+t*(W-2*inset);y=inset;}
+    else if(edge==='bottom'){x=inset+t*(W-2*inset);y=H-inset;}
+    else if(edge==='left'){y=inset+t*(H-2*inset);x=inset;}
+    else{y=inset+t*(H-2*inset);x=W-inset;}
+    p.push([x,y]);}
+  return p;
+}
+function ringBase(cx,cy,rx,ry,n){const p=[];for(let k=0;k<=n;k++){const a=(k/n)*Math.PI*2;p.push([cx+Math.cos(a)*rx,cy+Math.sin(a)*ry]);}return p;}
+function arcBase(cx,cy,rx,ry,a0,a1,n){const p=[];for(let k=0;k<=n;k++){const a=a0+(a1-a0)*(k/n);p.push([cx+Math.cos(a)*rx,cy+Math.sin(a)*ry]);}return p;}
+
+// adorn a braid base with blooms / leaves / thorns
+function adorn(base,o,r,i){
+  o=Object.assign({every:6,fScale:[0.85,1.6],redBias:.5,strong:false,leaf:true,thorn:false},o);
+  let s='';
+  for(let k=o.every;k<base.length-1;k+=o.every){
+    const[x,y]=base[k];
+    s+=bloom(x,y,o.fScale[0]+r()*(o.fScale[1]-o.fScale[0]),colorPick(r,o.redBias),r,i,o.strong);
+  }
+  if(o.leaf)for(let k=3;k<base.length-1;k+=Math.max(2,o.every-2)){if(r()<.7){const[x,y]=base[k];s+=bladeLeaf(x,y,r()*360,0.55+r()*0.7,i);}}
+  if(o.thorn)for(let k=2;k<base.length-1;k+=2){if(r()<.6){const[x,y]=base[k];s+=thorn(x,y,r()*360,0.7+r()*0.6,i);}}
+  return s;
+}
+function clusterBraid(cx,cy,len,ang,o,r,i){
+  const base=[[cx,cy],[cx+Math.cos(ang)*len*0.5+(r()*12-6),cy+Math.sin(ang)*len*0.5],[cx+Math.cos(ang)*len,cy+Math.sin(ang)*len]];
+  const dense=[];for(let k=0;k<=18;k++){const t=k/18;dense.push([base[0][0]+(base[2][0]-base[0][0])*t+Math.sin(t*3)*8,base[0][1]+(base[2][1]-base[0][1])*t+Math.cos(t*3)*8]);}
+  const b=braid(dense,{amp:7,twists:5,sw:3},i);
+  return b.svg+adorn(dense,o,r,i);
+}
+function chrome(i){
+  return `<rect width="${W}" height="${H}" fill="url(#bg${i})"/>
+    <rect x="22" y="22" width="${W-44}" height="${H-44}" rx="13" fill="none" stroke="rgba(255,255,255,.045)"/>
+    <radialGradient id="vig${i}" cx="50%" cy="48%" r="62%"><stop offset="55%" stop-color="rgba(0,0,0,0)"/><stop offset="100%" stop-color="rgba(0,0,0,.5)"/></radialGradient>
+    <rect width="${W}" height="${H}" fill="url(#vig${i})"/>`;
+}
+
+const C=[
+ {n:'01',name:'Triple Helix',bg:['#1C0A2E','#0D0518','#040209'],seed:201,
+  desc:'The braided vine runs the full border — three strands twisting around each other — studded with bold spiked blooms. The signature of the bolder direction.',
+  best:'All-purpose cutaway frame.',
+  build:(r,i)=>{let s='';[['top',34,11],['right',34,22],['bottom',34,11],['left',34,22]].forEach(([e,ins,tw])=>{const b=braid(edgeBase(e,ins,30),{amp:9,twists:tw,sw:3.4},i);s+=b.svg+adorn(b.base,{every:7,redBias:.5},r,i);});return s;},
+  logo:{cls:'sans up grad',size:30,html:'CloutHook',style:'bottom:7%;'} },
+
+ {n:'02',name:'Thorn & Bloom',bg:['#220A26','#100618','#040208'],seed:202,
+  desc:'Braided stems with thorns along the rope and heavier oxblood blooms. The most aggressive, edgy take.',
+  best:'Hook / high-tension moments.',
+  build:(r,i)=>{let s='';[['top',34,11],['right',34,22],['bottom',34,11],['left',34,22]].forEach(([e,ins,tw])=>{const b=braid(edgeBase(e,ins,30),{amp:10,twists:tw,sw:3.6},i);s+=b.svg+adorn(b.base,{every:7,redBias:.62,thorn:true,fScale:[0.9,1.7]},r,i);});return s;},
+  logo:{cls:'sans up steel',size:29,html:'CloutHook',style:'bottom:7%;'} },
+
+ {n:'03',name:'Ironvine',bg:['#1E0B30','#0C0518','#040209'],seed:203,
+  desc:'Heavy braided ropes anchor two opposite corners and run thick along the edges. Architectural, lots of dark negative space.',
+  best:'Clean frame for on-screen text.',
+  build:(r,i)=>{let s='';const b1=braid(edgeBase('left',34,30),{amp:7,twists:16,sw:3.2},i);const b2=braid(edgeBase('top',34,30),{amp:7,twists:9,sw:3.2},i);s+=b1.svg+b2.svg;s+=clusterBraid(60,90,70,2.1,{every:5,redBias:.5,fScale:[0.9,1.7]},r,i);s+=clusterBraid(W-60,H-96,70,-1.0,{every:5,redBias:.45,fScale:[0.9,1.7]},r,i);return s;},
+  logo:{cls:'sans up grad',size:27,html:'CloutHook',style:'top:50%;transform:translate(-50%,-50%);left:50%;'} },
+
+ {n:'04',name:'Bladework',bg:['#1A0B2E','#0C0618','#040209'],seed:204,
+  desc:'Braided stems carry bold blade leaves more than flowers — foliage-forward and structural, the least floral option.',
+  best:'Masculine, restrained frames.',
+  build:(r,i)=>{let s='';[['top',34,10],['right',34,20],['bottom',34,10],['left',34,20]].forEach(([e,ins,tw])=>{const b=braid(edgeBase(e,ins,28),{amp:8,twists:tw,sw:3.3},i);s+=b.svg;for(let k=2;k<b.base.length-1;k+=2){if(r()<.85){const[x,y]=b.base[k];s+=bladeLeaf(x,y,r()*360,0.8+r()*0.8,i);}}for(let k=6;k<b.base.length-1;k+=9){const[x,y]=b.base[k];s+=bloom(x,y,0.85+r()*0.5,colorPick(r,.5),r,i,false);}});return s;},
+  logo:{cls:'arch up steel',size:26,html:'CloutHook',style:'bottom:7.5%;'} },
+
+ {n:'05',name:'Laurel Crest',bg:['#1E0B30','#0D0518','#040209'],seed:205,
+  desc:'A braided laurel wreath — three vines wound into a ring — frames the CH monogram. Heraldic, badge-like, bold.',
+  best:'Avatar · app icon · crest.',
+  build:(r,i)=>{const base=ringBase(W/2,H/2,118,168,64);const b=braid(base,{amp:8,twists:22,sw:3},i);let s=b.svg;for(let k=0;k<base.length-1;k+=4){const[x,y]=base[k];if(r()<.8)s+=bloom(x,y,0.6+r()*0.5,colorPick(r,.5),r,i,false);if(r()<.6)s+=bladeLeaf(x,y,(k/base.length)*360,0.6+r()*0.5,i);}return s;},
+  logo:{cls:'arch grad',size:62,html:'CH',style:'top:50%;transform:translate(-50%,-50%);left:50%;'} },
+
+ {n:'06',name:'Obsidian',bg:['#15071F','#080310','#020106'],seed:206,
+  desc:'Near-black field, deep oxblood + indigo blooms, electric glow turned up on the braid. The darkest, moodiest, most premium-aggressive cut.',
+  best:'Cinematic intro / cover.',
+  build:(r,i)=>{let s='';[['top',34,11],['right',34,22],['bottom',34,11],['left',34,22]].forEach(([e,ins,tw])=>{const b=braid(edgeBase(e,ins,30),{amp:9,twists:tw,sw:3.5},i);s+=b.svg+adorn(b.base,{every:7,redBias:.5,strong:true,fScale:[0.9,1.7]},r,i);});return s;},
+  logo:{cls:'sans up grad',size:30,html:'CloutHook',style:'bottom:7%;'} },
+
+ {n:'07',name:'Crown Arch',bg:['#1F0B30','#0D0518','#040209'],seed:207,
+  desc:'A braided vine arches across the top like a laurel crown; bold blooms crest the arc, the lower frame stays open.',
+  best:'Title cards / top-weighted layouts.',
+  build:(r,i)=>{const base=arcBase(W/2,H/2-40,150,150,Math.PI*1.12,Math.PI*1.88,40);const b=braid(base,{amp:9,twists:11,sw:3.5},i);let s=b.svg+adorn(b.base,{every:5,redBias:.5,fScale:[0.9,1.7],leaf:true},r,i);s+=clusterBraid(W/2,170,46,1.57,{every:4,redBias:.55},r,i);return s;},
+  logo:{cls:'arch up steel',size:30,html:'CloutHook',style:'top:62%;'} },
+
+ {n:'08',name:'Electric Bramble',bg:['#1A0726','#0B0414','#030108'],seed:208,
+  desc:'A dense tangle of braided bramble and thorns with a neon-electric glow — edgy and overgrown.',
+  best:'Energetic, chaotic hook frames.',
+  build:(r,i)=>{let s='';[['top',34,16],['right',34,30],['bottom',34,16],['left',34,30]].forEach(([e,ins,tw])=>{const b=braid(edgeBase(e,ins,34),{amp:12,twists:tw,sw:3},i);s+=b.svg+adorn(b.base,{every:8,redBias:.5,thorn:true,strong:true},r,i);});return s;},
+  logo:{cls:'sans up grad',size:28,html:'CloutHook',style:'bottom:7%;'} },
+
+ {n:'09',name:'Iron Frame',bg:['#1E0B30','#0D0518','#040209'],seed:209,
+  desc:'A braided rope follows a hard rectangle, with bold blooming crests at the four corners. Structured, gallery-grade, masculine.',
+  best:'Premium structured look.',
+  build:(r,i)=>{let s='';['top','right','bottom','left'].forEach((e,j)=>{const b=braid(edgeBase(e,40,28),{amp:5,twists:[8,18,8,18][j],sw:3},i);s+=b.svg;});[[48,48,2.3],[W-48,48,3.9],[48,H-48,0.8],[W-48,H-48,-0.8]].forEach(([x,y,a])=>{s+=clusterBraid(x,y,44,a,{every:5,redBias:.5},r,i);});return s;},
+  logo:{cls:'arch up grad',size:28,html:'CloutHook',style:'top:50%;transform:translate(-50%,-50%);left:50%;'} },
+
+ {n:'10',name:'End-Card (Bold)',bg:['#200B32','#0D0518','#040209'],seed:210,
+  desc:'The bolder brand moment: braided frame, strong logo + tagline, a thin gilt underline for premium weight. Your outro / cover.',
+  best:'End-card · cover · splash.',
+  build:(r,i)=>{let s='';[['top',34,11],['right',34,22],['bottom',34,11],['left',34,22]].forEach(([e,ins,tw])=>{const b=braid(edgeBase(e,ins,30),{amp:9,twists:tw,sw:3.4},i);s+=b.svg+adorn(b.base,{every:8,redBias:.5},r,i);});s+=`<rect x="${W/2-66}" y="${H/2+34}" width="132" height="2" rx="1" fill="url(#ctr${i})" filter="url(#gs${i})" opacity=".9"/>`;return s;},
+  logo:{cls:'arch up grad',size:38,html:'CloutHook<div class="tag">Hook first · Clout follows</div>',style:'top:42%;transform:translate(-50%,-50%);left:50%;'} },
+];
+
+const grid=document.getElementById('grid');
+C.forEach((c,idx)=>{
+  const i=idx+1, r=mulberry32(c.seed);
+  const card=document.createElement('div');card.className='card';
+  const svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice">${defs(i,c.bg)}${chrome(i)}${c.build(r,i)}</svg>`;
+  card.innerHTML=`
+    <div class="frame">${svg}
+      <div class="logo" style="${c.logo.style}"><div class="wm ${c.logo.cls}" style="font-size:${c.logo.size}px">${c.logo.html}</div></div>
+    </div>
+    <div class="cap"><span class="n">${c.n}</span><h3>${c.name}</h3><p>${c.desc}</p><div class="best"><b>Best for:</b> ${c.best}</div></div>`;
+  grid.appendChild(card);
+});
+</script>
+</body>
+</html>

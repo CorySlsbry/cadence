@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CloutHook — Transition Card (dark carnations)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#04040A; --line:rgba(255,255,255,.08); --paper:#ECE9F2; --muted:#938CA6; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(60% 40% at 50% 0%, rgba(70,90,120,.06), transparent 60%),var(--bg);
+    color:var(--paper);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:46px 26px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  h1{font-family:'Space Grotesk';font-weight:600;font-size:clamp(24px,4vw,38px);margin:12px 0 6px;color:#EDEAF4;filter:drop-shadow(0 0 16px rgba(120,150,180,.25))}
+  .sub{color:var(--muted);max-width:680px;line-height:1.6;font-size:15px}
+  .stage{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start;margin-top:34px}
+  .frame{position:relative;width:min(420px,86vw);aspect-ratio:9/16;border-radius:22px;overflow:hidden;border:1px solid var(--line);
+     box-shadow:0 40px 90px -44px rgba(90,60,130,.5)}
+  .frame svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .frame .mid{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;color:rgba(255,255,255,.13);font-family:'Space Grotesk';font-size:11px;letter-spacing:.28em;text-transform:uppercase;pointer-events:none}
+  .side{flex:1;min-width:280px}
+  .side h2{font-family:'Space Grotesk';font-weight:600;font-size:18px;margin:6px 0 10px}
+  .side p{color:var(--muted);font-size:14px;line-height:1.62;margin:0 0 14px}
+  .side .k{color:#B6C7D0;font-weight:600}
+  .detail{margin-top:18px}
+  .detail .lbl{font-size:12px;letter-spacing:.04em;color:var(--muted);margin-bottom:8px}
+  .detail .strip{display:flex;gap:10px;background:#050309;border:1px solid var(--line);border-radius:14px;padding:14px}
+  .detail .strip svg{width:33.33%;height:120px}
+  ul.lev{list-style:none;padding:0;margin:8px 0 0;color:var(--muted);font-size:13.5px;line-height:1.9}
+  ul.lev b{color:#A8D8E0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">CloutHook · Transition Card</div>
+  <h1>Dark, subtle carnations · clear center</h1>
+  <p class="sub">Darkened to deeper, muted variants of the same rose / magenta / violet, with the glow, core and highlight pulled right back so the blooms recede quietly into the dark behind your footage. The center is intentionally empty — this is a transition card to drop between clips.</p>
+
+  <div class="stage">
+    <div class="frame">
+      <svg id="ec" viewBox="0 0 460 818" preserveAspectRatio="xMidYMid slice"></svg>
+      <div class="mid">clear center</div>
+    </div>
+    <div class="side">
+      <h2>What changed</h2>
+      <p><span class="k">Darker + subtler.</span> Deeper, muted variants of the same three hues — the blooms now sit back into the dark instead of popping, with halo / core / highlight all dialed down and the foliage deepened.</p>
+      <p><span class="k">No center text.</span> The wordmark is removed so the middle stays clear for use as a transition card between clips. (The faint “clear center” label is just a placeholder — it won't be in the export.)</p>
+      <p><span class="k">Still real.</span> Same ~40-petal dimensional carnations + soft “sampling,” just quiet. Close-ups below.</p>
+      <div class="detail">
+        <div class="lbl">Carnation detail (close-up)</div>
+        <div class="strip"><svg id="d0" viewBox="0 0 120 120"></svg><svg id="d1" viewBox="0 0 120 120"></svg><svg id="d2" viewBox="0 0 120 120"></svg></div>
+      </div>
+      <ul class="lev">
+        <li>Dial it: <b>even darker / a touch lighter</b> · <b>bigger / smaller</b> blooms</li>
+        <li>Density: <b>sparser / fuller</b> · palette <b>warmer (rose) / cooler (teal)</b></li>
+        <li>Corners: all four · top-only · single</li>
+        <li>Then I export 1080×1920 (transparent-center + opaque) + WebM</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function smooth(pts){if(pts.length<2)return'';let d=`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;for(let i=0;i<pts.length-1;i++){const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;const c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6,c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;d+=` C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;}return d;}
+
+// DARK, muted variants of the same rose / magenta / violet
+const HUES={
+  rose:   {deep:'#2C0712',mid:'#641630',tip:'#9E4E62',halo:'#561022'},
+  magenta:{deep:'#27081E',mid:'#581446',tip:'#8C3C68',halo:'#440F34'},
+  violet: {deep:'#150A2C',mid:'#382268',tip:'#624A92',halo:'#281850'},
+};
+function defs(){
+  let g='<defs>';
+  g+=`<radialGradient id="bgrad" cx="50%" cy="42%" r="86%"><stop offset="0%" stop-color="#0A0B15"/><stop offset="62%" stop-color="#06040E"/><stop offset="100%" stop-color="#020105"/></radialGradient>`;
+  for(const k in HUES){const h=HUES[k];
+    g+=`<linearGradient id="pg_${k}" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="${h.deep}"/><stop offset="0.55" stop-color="${h.mid}"/><stop offset="1" stop-color="${h.tip}"/></linearGradient>`;
+    g+=`<radialGradient id="halo_${k}" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${h.halo}" stop-opacity="0.26"/><stop offset="55%" stop-color="${h.halo}" stop-opacity="0.07"/><stop offset="100%" stop-color="${h.halo}" stop-opacity="0"/></radialGradient>`;
+  }
+  g+=`<radialGradient id="hl" cx="50%" cy="40%" r="60%"><stop offset="0%" stop-color="#E8DCF0" stop-opacity="0.5"/><stop offset="100%" stop-color="#E8DCF0" stop-opacity="0"/></radialGradient>`;
+  g+=`<radialGradient id="core" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#B89868" stop-opacity="0.85"/><stop offset="65%" stop-color="#6E4E26" stop-opacity="0.45"/><stop offset="100%" stop-color="#3A2810" stop-opacity="0"/></radialGradient>`;
+  g+=`<linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#34917A"/><stop offset="100%" stop-color="#0C5240"/></linearGradient>`;
+  g+=`<linearGradient id="stem" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2E8C78"/><stop offset="100%" stop-color="#0C5248"/></linearGradient>`;
+  g+=`<filter id="bloom" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+  g+=`<filter id="soft" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+  g+=`<filter id="halofx" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="5"/></filter>`;
+  g+='</defs>';
+  return g;
+}
+function petal(L,w){
+  return `M0 0 C ${-w*0.62} ${-L*0.28}, ${-w*0.52} ${-L*0.78}, ${-w*0.4} ${-L*0.93}`
+    +` L ${-w*0.26} ${-L*0.84} L ${-w*0.12} ${-L*0.98} L 0 ${-L*0.87}`
+    +` L ${w*0.12} ${-L*0.98} L ${w*0.26} ${-L*0.84} L ${w*0.4} ${-L*0.93}`
+    +` C ${w*0.52} ${-L*0.78}, ${w*0.62} ${-L*0.28}, 0 0 Z`;
+}
+function carnation(x,y,sc,hue,r){
+  const g=`url(#pg_${hue})`;
+  let s=`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc.toFixed(2)})">`;
+  s+=`<circle r="28" fill="url(#halo_${hue})"/>`;
+  s+=`<g filter="url(#bloom)">`;
+  const rings=[[12,24,13,0.62],[12,20,12,0.8],[10,16,11,0.9],[8,11,10,1]];
+  rings.forEach((R,ri)=>{const[count,L,w,op]=R;const rot0=r()*46+ri*15;for(let k=0;k<count;k++){const a=rot0+(360/count)*k+(r()*9-4.5);s+=`<g transform="rotate(${a.toFixed(1)})" opacity="${op}"><path d="${petal(L,w)}" fill="${g}"/></g>`;}});
+  s+=`<ellipse cx="0" cy="-5" rx="11" ry="8" fill="url(#hl)" opacity="0.12"/>`;
+  s+=`<circle r="3" fill="url(#core)" opacity="0.75"/>`;
+  s+=`</g></g>`;
+  return s;
+}
+function leaf(x,y,ang,sc){return `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${ang.toFixed(0)}) scale(${sc.toFixed(2)})" filter="url(#soft)" opacity="0.5"><path d="M0 0 Q12 -5 24 0 Q12 5 0 0 Z" fill="url(#leaf)"/></g>`;}
+function speck(x,y,sc,teal){return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1.1*sc).toFixed(1)}" fill="${teal?'#4FA89C':'#8A5EA8'}" filter="url(#halofx)" opacity="0.34"/>`;}
+function tendril(x,y,ang,len,r){const pts=[];let cx=x,cy=y,a=ang;const segs=9;for(let k=0;k<=segs;k++){pts.push([cx,cy]);a+=(r()-0.5)*0.5;cx+=Math.cos(a)*len/segs;cy+=Math.sin(a)*len/segs;}let s=`<path d="${smooth(pts)}" fill="none" stroke="url(#stem)" stroke-width="1.5" stroke-linecap="round" filter="url(#soft)" opacity="0.32"/>`;for(let k=2;k<pts.length;k+=2){const op=1-k/pts.length;if(r()<0.7)s+=`<g opacity="${(0.6*op+0.08).toFixed(2)}">`+leaf(pts[k][0],pts[k][1],a*57+(r()<.5?70:-70),(0.55+r()*0.4)*(0.5+op))+`</g>`;}return s;}
+
+const FW=460,FH=818,HK=['rose','magenta','violet'];
+function cluster(cx,cy,aEdge,aSide,r){
+  let s=tendril(cx,cy,aEdge+(r()*0.3-0.15),148,r)+tendril(cx,cy,aSide+(r()*0.3-0.15),118,r);
+  for(let k=0;k<3;k++)s+=leaf(cx+(r()*46-23),cy+(r()*46-23),r()*360,0.7+r()*0.6);
+  for(let k=0;k<2;k++)s+=carnation(cx+(r()*48-24)+Math.cos(aEdge)*r()*26,cy+(r()*48-24)+Math.sin(aSide)*r()*26,1.3+r()*0.55,HK[(r()*3)|0],r);
+  for(let k=0;k<4;k++)s+=speck(cx+(r()*82-41),cy+(r()*82-41),0.7+r()*0.5,r()<0.5);
+  return s;
+}
+function scene(){
+  const r=mulberry32(408);let s=defs()+`<rect width="${FW}" height="${FH}" fill="url(#bgrad)"/>`;
+  for(let k=0;k<15;k++)s+=speck(r()*FW,r()*FH,0.5+r()*0.5,r()<0.5);
+  s+=cluster(60,80,0,Math.PI/2,r);
+  s+=cluster(FW-60,80,Math.PI,Math.PI/2,r);
+  s+=cluster(60,FH-80,0,-Math.PI/2,r);
+  s+=cluster(FW-60,FH-80,Math.PI,-Math.PI/2,r);
+  return s;
+}
+document.getElementById('ec').innerHTML=scene();
+['d0','d1','d2'].forEach((id,j)=>{const r=mulberry32(20+j*7);document.getElementById(id).innerHTML=defs()+`<rect width="120" height="120" fill="#050309"/>`+carnation(60,62,2.6,HK[j],r);});
+</script>
+</body>
+</html>

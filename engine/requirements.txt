@@ -1,0 +1,7 @@
+# Core engine dependencies (the engine is fully functional + testable with just these).
+numpy>=1.26
+pillow>=10.0
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+google-genai>=1.0  # Gemini client used by captions, imagegen and the LLM helpers

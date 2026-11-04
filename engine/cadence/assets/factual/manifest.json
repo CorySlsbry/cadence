@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "library_drive_url": "https://drive.google.com/drive/folders/1vM0bde-gznSY484krJPUOh5hJq3TNUcL",
+  "description": "Factual-image guardrail map. When a talking point names one of these guarded terms, the AI b-roll pipeline shows the EXACT real screenshot named here instead of a generated (hallucinated) image — 100% accurate, 0 AI tokens. Edit freely: add an entry { key, asset_path, aliases, variant, alt } and drop the matching PNG next to this file. Filenames are the canonical naming cadence shared with the screenshot library (Downloads + Google Drive). Aliases are matched case-insensitively, on word boundaries, longest-phrase-first (so 'claude code' wins over a bare term). Entries whose PNG is not present yet are skipped automatically.",
+  "assets": [
+    {
+      "key": "claude-skills",
+      "asset_path": "claude-skills.png",
+      "variant": "skills-tab",
+      "alt": "Claude Desktop open to the Skills tab",
+      "aliases": ["claude skills", "skills tab", "skill tab", "skills panel", "agent skills", "skills"]
+    },
+    {
+      "key": "claude-code",
+      "asset_path": "claude-code.png",
+      "variant": "code-tab",
+      "alt": "Claude Desktop / Claude Code coding view",
+      "aliases": ["claude code", "code tab", "the code tab", "code view", "claude code cli", "coding agent", "writing code"]
+    },
+    {
+      "key": "claude-cowork",
+      "asset_path": "claude-cowork.png",
+      "variant": "cowork-tab",
+      "alt": "Claude Desktop open to the Cowork tab",
+      "aliases": ["claude cowork", "cowork tab", "cowork mode", "claude cowork mode", "co-work", "cowork"]
+    },
+    {
+      "key": "claude-connectors",
+      "asset_path": "claude-connectors.png",
+      "variant": "settings-connectors",
+      "alt": "Claude Desktop Connectors / MCP settings",
+      "aliases": ["connectors", "custom connector", "add a connector", "connect an app", "connector", "integration", "integrations", "mcp", "mcp server", "mcp servers", "model context protocol"]
+    },
+    {
+      "key": "claude-plugins",
+      "asset_path": "claude-plugins.png",
+      "variant": "plugin-directory",
+      "alt": "Claude Desktop plugin directory (Skills / Connectors / Plugins)",
+      "aliases": ["plugins", "plugin", "browse plugins", "plugin directory", "claude plugins", "marketplace", "pre-built knowledge", "personal plugins"]
+    },
+    {
+      "key": "claude-customize",
+      "asset_path": "claude-customize.png",
+      "variant": "customize-home",
+      "alt": "Claude Desktop Customize home (Skills, connectors, and plugins)",
+      "aliases": ["customize claude", "customize", "claude settings", "skills connectors and plugins", "shape how claude works"]
+    },
+    {
+      "key": "claude-mcp",
+      "asset_path": "claude-mcp.png",
+      "variant": "mcp-servers",
+      "alt": "Claude Desktop MCP server list",
+      "aliases": ["mcp server", "mcp servers", "model context protocol", "remote mcp"]
+    },
+    {
+      "key": "claude-permission-prompt",
+      "asset_path": "claude-permission-prompt.png",
+      "variant": "allow-deny-dialog",
+      "alt": "Claude Desktop permission / approval (Allow / Deny) dialog — the guardrail in action",
+      "aliases": ["permission prompt", "allow or deny", "allow deny", "allow / deny", "deny", "permission dialog", "asks for permission", "approval dialog", "needs approval", "requires approval", "human in the loop", "guardrail", "guardrails", "always allow", "ask before"]
+    },
+    {
+      "key": "claude-model-picker",
+      "asset_path": "claude-model-picker.png",
+      "variant": "model-selector",
+      "alt": "Claude Desktop model picker (Opus / Sonnet / Haiku)",
+      "aliases": ["model picker", "choose a model", "opus or sonnet", "pick the model", "switch models"]
+    },
+    {
+      "key": "claude-projects",
+      "asset_path": "claude-projects.png",
+      "variant": "projects",
+      "alt": "Claude Desktop Projects view",
+      "aliases": ["claude projects", "projects tab", "a project in claude"]
+    },
+    {
+      "key": "claude-artifacts",
+      "asset_path": "claude-artifacts.png",
+      "variant": "artifacts",
+      "alt": "Claude Desktop Artifacts panel",
+      "aliases": ["artifacts", "artifact panel", "claude artifact"]
+    },
+    {
+      "key": "claude-new-chat",
+      "asset_path": "claude-new-chat.png",
+      "variant": "home-new-chat",
+      "alt": "Claude Desktop home / new chat composer",
+      "aliases": ["new chat", "claude home", "the chat box", "start a chat"]
+    },
+    {
+      "key": "claude-desktop",
+      "asset_path": "claude-desktop.png",
+      "variant": "app-window",
+      "alt": "Claude Desktop app (generic window)",
+      "aliases": ["claude desktop", "the claude app", "claude ai app"]
+    }
+  ]
+}

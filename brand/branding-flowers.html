@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CloutHook — Transition Card · 5 Flowers / 10 Examples</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#04040A; --line:rgba(255,255,255,.08); --paper:#ECE9F2; --muted:#938CA6; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(60% 40% at 50% 0%, rgba(70,90,120,.06), transparent 60%),var(--bg);
+    color:var(--paper);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1280px;margin:0 auto;padding:50px 26px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  h1{font-family:'Space Grotesk';font-weight:600;font-size:clamp(26px,4.5vw,42px);margin:12px 0 6px;color:#EDEAF4;filter:drop-shadow(0 0 16px rgba(120,150,180,.25))}
+  .sub{color:var(--muted);max-width:720px;line-height:1.62;font-size:15px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:28px 22px;padding:30px 0 0}
+  .card{display:flex;flex-direction:column}
+  .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:16px;overflow:hidden;border:1px solid var(--line);box-shadow:0 26px 60px -34px rgba(90,60,130,.5)}
+  .frame svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .frame .mid{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:rgba(255,255,255,.1);font-family:'Space Grotesk';font-size:9px;letter-spacing:.28em;text-transform:uppercase}
+  .cap{display:flex;gap:11px;align-items:flex-start;padding:13px 3px 0}
+  .cap .sw{width:46px;height:46px;flex:none;border-radius:9px;background:#050309;border:1px solid var(--line)}
+  .cap .sw svg{width:100%;height:100%;display:block}
+  .cap .n{font-family:'Space Grotesk';font-size:11px;font-weight:600;color:#B583FF;letter-spacing:.05em}
+  .cap h3{font-family:'Space Grotesk';font-weight:600;font-size:15.5px;margin:3px 0 0}
+  .cap p{color:var(--muted);font-size:12px;line-height:1.45;margin:4px 0 0}
+  footer{border-top:1px solid var(--line);margin-top:46px;padding:30px 0 80px;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  footer .g2{font-family:'Space Grotesk';font-weight:600;color:#A8D8E0}
+  .note{color:var(--muted);font-size:13.5px;margin-top:16px}.note b{color:#A8D8E0;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">CloutHook · Transition Card — flower options</div>
+  <h1>5 flowers · 10 examples</h1>
+  <p class="sub">Carnations out. Five new blooms — rose, dahlia, poppy, lily, lotus — each in the same dark, subtle, glowing transition-card style with a clear center. Two layouts per flower; the swatch by each caption is a close-up of that bloom so you can judge the shape.</p>
+  <p class="note">Tell me <b>"the lily"</b> (or any), plus any tweak — <b>darker/lighter · bigger/smaller · which corners</b> — and I'll lock it and export the 1080×1920 transparent-center overlay + WebM.</p>
+  <div class="grid" id="grid"></div>
+  <footer><span>CloutHook — transition-card flower study · v1</span><span class="g2">clouthook.com</span></footer>
+</div>
+
+<svg id="masterdefs" style="position:absolute;width:0;height:0" aria-hidden="true"></svg>
+
+<script>
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function smooth(pts){if(pts.length<2)return'';let d=`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;for(let i=0;i<pts.length-1;i++){const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;const c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6,c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;d+=` C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;}return d;}
+const FW=460,FH=818;
+const HUES={rose:{deep:'#2C0712',mid:'#6E1834',tip:'#A85468',halo:'#5A1024'},magenta:{deep:'#27081E',mid:'#601650',tip:'#984070',halo:'#481036'},violet:{deep:'#150A2C',mid:'#3C2670',tip:'#6850A0',halo:'#2C1A56'}};
+function defs(){let g='<defs>';
+  g+=`<radialGradient id="bgrad" cx="50%" cy="42%" r="86%"><stop offset="0%" stop-color="#0A0B15"/><stop offset="62%" stop-color="#06040E"/><stop offset="100%" stop-color="#020105"/></radialGradient>`;
+  for(const k in HUES){const h=HUES[k];
+    g+=`<linearGradient id="pg_${k}" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="${h.deep}"/><stop offset="0.55" stop-color="${h.mid}"/><stop offset="1" stop-color="${h.tip}"/></linearGradient>`;
+    g+=`<radialGradient id="halo_${k}" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${h.halo}" stop-opacity="0.30"/><stop offset="55%" stop-color="${h.halo}" stop-opacity="0.08"/><stop offset="100%" stop-color="${h.halo}" stop-opacity="0"/></radialGradient>`;
+  }
+  g+=`<radialGradient id="core" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#B89868" stop-opacity="0.8"/><stop offset="70%" stop-color="#6E4E26" stop-opacity="0.4"/><stop offset="100%" stop-color="#3A2810" stop-opacity="0"/></radialGradient>`;
+  g+=`<linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#34917A"/><stop offset="100%" stop-color="#0C5240"/></linearGradient>`;
+  g+=`<linearGradient id="stem" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2E8C78"/><stop offset="100%" stop-color="#0C5248"/></linearGradient>`;
+  g+=`<filter id="halofx" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="4"/></filter>`;
+  return g+'</defs>';
+}
+// shared bloom wrapper: soft halos behind, no per-bloom blur (cheap glow)
+function wrap(x,y,sc,hue,inner){return `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc.toFixed(2)})"><circle r="40" fill="url(#halo_${hue})" opacity="0.5"/><circle r="22" fill="url(#halo_${hue})"/>${inner}</g>`;}
+function ring(petalPath,count,L,w,op,rot){let s='';for(let k=0;k<count;k++){const a=rot+360/count*k;s+=`<g transform="rotate(${a.toFixed(1)})" opacity="${op}"><path d="${petalPath(L,w)}" fill="HUEFILL"/></g>`;}return s;}
+
+// ---- petal shapes ----
+const P={
+  rose:(L,w)=>`M0 0 C ${-w} ${-L*0.42}, ${-w*0.62} ${-L*0.99}, 0 ${-L*0.9} C ${w*0.62} ${-L*0.99}, ${w} ${-L*0.42}, 0 0 Z`,
+  dahlia:(L,w)=>`M0 0 L ${-w*0.5} ${-L*0.42} L ${-w*0.16} ${-L*0.8} L 0 ${-L} L ${w*0.16} ${-L*0.8} L ${w*0.5} ${-L*0.42} Z`,
+  poppy:(L,w)=>`M0 0 C ${-w} ${-L*0.22}, ${-w*1.06} ${-L*0.96}, 0 ${-L} C ${w*1.06} ${-L*0.96}, ${w} ${-L*0.22}, 0 0 Z`,
+  lily:(L,w)=>`M0 0 C ${-w*0.55} ${-L*0.4}, ${-w*0.5} ${-L*0.88}, 0 ${-L} C ${w*0.5} ${-L*0.88}, ${w*0.55} ${-L*0.4}, 0 0 Z`,
+  lotus:(L,w)=>`M0 0 C ${-w*0.6} ${-L*0.42}, ${-w*0.4} ${-L*0.93}, 0 ${-L} C ${w*0.4} ${-L*0.93}, ${w*0.6} ${-L*0.42}, 0 0 Z`,
+};
+function fill(s,hue){return s.split('HUEFILL').join(`url(#pg_${hue})`);}
+
+function rose(x,y,sc,hue,r){let s='';[[8,22,15,.58],[8,17,13,.76],[7,12,11,.9],[5,8,9,1]].forEach((R,ri)=>{s+=ring(P.rose,R[0],R[1],R[2],R[3],r()*36+ri*23);});s+=`<circle r="2.6" fill="url(#core)" opacity="0.5"/>`;return wrap(x,y,sc,hue,fill(s,hue));}
+function dahlia(x,y,sc,hue,r){let s='';[[18,22,5,.66],[16,17,5,.84],[12,12,5,1]].forEach((R,ri)=>{s+=ring(P.dahlia,R[0],R[1],R[2],R[3],r()*30+ri*11);});s+=`<circle r="3" fill="url(#core)" opacity="0.6"/>`;return wrap(x,y,sc,hue,fill(s,hue));}
+function poppy(x,y,sc,hue,r){let s=ring(P.poppy,5,23,16,0.72,r()*40);s=fill(s,hue);s+=`<circle r="5.5" fill="#150510"/>`;for(let k=0;k<13;k++){const a=k/13*6.28;s+=`<circle cx="${(Math.cos(a)*7).toFixed(1)}" cy="${(Math.sin(a)*7).toFixed(1)}" r="0.9" fill="#3A2030" opacity="0.85"/>`;}s+=`<circle r="2.4" fill="#241019"/>`;return wrap(x,y,sc,hue,s);}
+function lily(x,y,sc,hue,r){let s='';const rot=r()*40;for(let k=0;k<6;k++){const a=rot+60*k;s+=`<g transform="rotate(${a})" opacity="0.96"><path d="HUEFILL_P" fill="HUEFILL"/><path d="M0 0 L0 -23" stroke="#1A0610" stroke-width="0.5" opacity="0.3"/></g>`;}s=s.split('HUEFILL_P').join(P.lily(25,8));s=fill(s,hue);for(let k=0;k<6;k++){const a=(rot+30+60*k)*Math.PI/180,fx=Math.cos(a)*11,fy=Math.sin(a)*11;s+=`<path d="M0 0 L ${fx.toFixed(1)} ${fy.toFixed(1)}" stroke="#7A6A3A" stroke-width="0.7" opacity="0.6"/><ellipse cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" rx="1.7" ry="1" fill="#C89A4E" opacity="0.7" transform="rotate(${(a*57).toFixed(0)} ${fx.toFixed(1)} ${fy.toFixed(1)})"/>`;}s+=`<circle r="1.8" fill="url(#core)" opacity="0.55"/>`;return wrap(x,y,sc,hue,s);}
+function lotus(x,y,sc,hue,r){let s='';[[10,24,9,.66],[9,18,9,.85],[7,12,8,1]].forEach((R,ri)=>{s+=ring(P.lotus,R[0],R[1],R[2],R[3],r()*30+ri*17);});s+=`<circle r="2.6" fill="url(#core)" opacity="0.5"/>`;return wrap(x,y,sc,hue,fill(s,hue));}
+const FLOWER={rose,dahlia,poppy,lily,lotus};
+
+function leaf(x,y,ang,sc){return `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${ang.toFixed(0)}) scale(${sc.toFixed(2)})" opacity="0.42"><path d="M0 0 Q12 -5 24 0 Q12 5 0 0 Z" fill="url(#leaf)"/></g>`;}
+function speck(x,y,sc,teal){return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1.1*sc).toFixed(1)}" fill="${teal?'#4FA89C':'#8A5EA8'}" filter="url(#halofx)" opacity="0.32"/>`;}
+function tendril(x,y,ang,len,r){const pts=[];let cx=x,cy=y,a=ang;for(let k=0;k<=9;k++){pts.push([cx,cy]);a+=(r()-0.5)*0.5;cx+=Math.cos(a)*len/9;cy+=Math.sin(a)*len/9;}let s=`<path d="${smooth(pts)}" fill="none" stroke="url(#stem)" stroke-width="1.4" stroke-linecap="round" opacity="0.3"/>`;for(let k=2;k<pts.length;k+=2){const op=1-k/pts.length;if(r()<0.7)s+=`<g opacity="${(0.55*op+0.08).toFixed(2)}">`+leaf(pts[k][0],pts[k][1],a*57+(r()<.5?70:-70),(0.55+r()*0.4)*(0.5+op))+`</g>`;}return s;}
+
+const CORN={tl:[60,88,0,Math.PI/2],tr:[FW-60,88,Math.PI,Math.PI/2],bl:[60,FH-88,0,-Math.PI/2],br:[FW-60,FH-88,Math.PI,-Math.PI/2]};
+function cluster(fn,corner,hue,r){const[cx,cy,aE,aS]=CORN[corner];let s=tendril(cx,cy,aE+(r()*0.3-0.15),138,r)+tendril(cx,cy,aS+(r()*0.3-0.15),110,r);for(let k=0;k<3;k++)s+=leaf(cx+(r()*44-22),cy+(r()*44-22),r()*360,0.7+r()*0.6);const n=1+(r()<0.5?1:0);for(let k=0;k<n;k++)s+=fn(cx+(r()*44-22)+Math.cos(aE)*r()*22,cy+(r()*44-22)+Math.sin(aS)*r()*22,1.25+r()*0.5,hue,r);for(let k=0;k<4;k++)s+=speck(cx+(r()*78-39),cy+(r()*78-39),0.7+r()*0.5,r()<0.5);return s;}
+const LAY={four:['tl','tr','bl','br'],diagonal:['tl','br'],single:['bl'],topcrown:['tl','tr'],bottom:['bl','br']};
+function scene(flower,layout,hues,seed){const fn=FLOWER[flower],r=mulberry32(seed);let s=`<rect width="${FW}" height="${FH}" fill="url(#bgrad)"/>`;for(let k=0;k<12;k++)s+=speck(r()*FW,r()*FH,0.5+r()*0.4,r()<0.5);LAY[layout].forEach((c,j)=>{s+=cluster(fn,c,hues[j%hues.length],r);});return s;}
+
+const CARDS=[
+ {fl:'rose',name:'Rose',lay:'four',hues:['rose','magenta','rose','violet'],sw:'rose',note:'Spiralled layered petals — classic, elegant.'},
+ {fl:'rose',name:'Rose',lay:'bottom',hues:['magenta','rose'],sw:'magenta',note:'Same rose, gathered along the bottom.'},
+ {fl:'dahlia',name:'Dahlia',lay:'four',hues:['violet','magenta','violet','rose'],sw:'violet',note:'Radiating pointed petals — geometric, structured.'},
+ {fl:'dahlia',name:'Dahlia',lay:'diagonal',hues:['magenta','violet'],sw:'magenta',note:'Two-corner diagonal, lots of open space.'},
+ {fl:'poppy',name:'Poppy',lay:'four',hues:['rose','violet','rose','magenta'],sw:'rose',note:'Few broad translucent petals + dark center — airy.'},
+ {fl:'poppy',name:'Poppy',lay:'topcrown',hues:['magenta','violet'],sw:'violet',note:'Poppies crowning the top only.'},
+ {fl:'lily',name:'Lily',lay:'four',hues:['rose','violet','magenta','violet'],sw:'violet',note:'Six pointed petals + stamens — open, refined.'},
+ {fl:'lily',name:'Lily',lay:'single',hues:['rose'],sw:'rose',note:'A single lily spray, bottom-left. Minimal.'},
+ {fl:'lotus',name:'Lotus',lay:'four',hues:['violet','magenta','violet','rose'],sw:'violet',note:'Layered pointed cup — serene, premium.'},
+ {fl:'lotus',name:'Lotus',lay:'diagonal',hues:['rose','magenta'],sw:'rose',note:'Lotus on the diagonal, quiet and balanced.'},
+];
+
+document.getElementById('masterdefs').innerHTML=defs();
+const grid=document.getElementById('grid');
+CARDS.forEach((c,idx)=>{
+  const seed=500+idx*9;
+  const card=document.createElement('div');card.className='card';
+  const frame=`<svg viewBox="0 0 ${FW} ${FH}" preserveAspectRatio="xMidYMid slice">${scene(c.fl,c.lay,c.hues,seed)}</svg>`;
+  const sw=`<svg viewBox="0 0 120 120"><rect width="120" height="120" fill="#050309"/>${FLOWER[c.fl](60,64,2.5,c.sw,mulberry32(seed+3))}</svg>`;
+  card.innerHTML=`<div class="frame">${frame}<div class="mid">clear center</div></div>
+    <div class="cap"><div class="sw">${sw}</div><div><span class="n">${String(idx+1).padStart(2,'0')} · ${c.lay}</span><h3>${c.name}</h3><p>${c.note}</p></div></div>`;
+  grid.appendChild(card);
+});
+</script>
+</body>
+</html>

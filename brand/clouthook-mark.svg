@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="CloutHook mark">
+  <title>CloutHook mark</title>
+  <!-- The hook: a single confident stroke. The first 1.5s that stops the scroll. -->
+  <path d="M76 24 L76 60 Q76 92 49 92 Q24 92 24 70 Q24 57 37 54"
+        fill="none" stroke="#CCFF00" stroke-width="18"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

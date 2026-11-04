@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CloutHook — Logo Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Sora:wght@600;700&family=Syne:wght@700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--c1:#FF5A7A;--c2:#9B5BE0;--teal:#3FD0C0;--grad:linear-gradient(100deg,#FF5A7A,#C24DD0 52%,#9B5BE0);}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(60% 40% at 50% 0%,rgba(150,70,200,.08),transparent 60%),#06060C;color:#ECE9F2;font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:50px 26px 90px}
+  .eyebrow{font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:#938CA6;font-weight:600}
+  h1{font-family:'Space Grotesk';font-weight:600;font-size:clamp(26px,4.5vw,42px);margin:12px 0 6px;
+     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#938CA6;max-width:720px;line-height:1.62;font-size:15px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:22px;padding:30px 0 0}
+  .card{background:#0C0A14;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:34px 28px 22px;display:flex;flex-direction:column;align-items:center;min-height:210px;justify-content:center;position:relative}
+  .card .lab{position:absolute;left:18px;top:14px;font-family:'Space Grotesk';font-size:11px;font-weight:600;color:#C77DFF;letter-spacing:.05em}
+  .card .desc{margin-top:22px;color:#8C84A0;font-size:12.5px;text-align:center;line-height:1.5}
+  .logo{display:flex;align-items:center;gap:14px}
+  .grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 16px rgba(180,80,200,.45))}
+  /* 1 gradient wordmark */
+  .l1{font-family:'Space Grotesk';font-weight:700;font-size:42px;letter-spacing:-.02em}
+  /* 2 two-tone */
+  .l2{font-family:'Space Grotesk';font-weight:700;font-size:42px;letter-spacing:-.02em}
+  .l2 .w{color:#F2EEF8;filter:drop-shadow(0 0 10px rgba(255,255,255,.2))}
+  /* 3 monogram + wordmark */
+  .badge{width:58px;height:58px;flex:none}
+  .l3{font-family:'Sora';font-weight:700;font-size:34px;letter-spacing:-.02em;color:#F2EEF8}
+  .l3 .h{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  /* 4 bloom accent */
+  .l4{font-family:'Space Grotesk';font-weight:600;font-size:40px;letter-spacing:-.01em;color:#F2EEF8;display:flex;align-items:center;gap:2px}
+  .l4 .bloom{width:30px;height:30px;margin:0 1px}
+  /* 5 uppercase minimal */
+  .l5{font-family:'Space Grotesk';font-weight:600;font-size:30px;letter-spacing:.16em;text-transform:uppercase;color:#F2EEF8;text-align:center}
+  .l5 .u{height:2px;width:100%;margin-top:10px;border-radius:2px;background:var(--grad);filter:drop-shadow(0 0 8px rgba(194,77,208,.6))}
+  /* 6 serif */
+  .l6{font-family:'Fraunces';font-weight:600;font-size:44px;letter-spacing:-.01em}
+  /* 7 syne distinctive */
+  .l7{font-family:'Syne';font-weight:800;font-size:38px;letter-spacing:-.01em}
+  /* 8 lockup stacked */
+  .l8{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .l8 .wm{font-family:'Space Grotesk';font-weight:700;font-size:34px;letter-spacing:-.02em}
+  .l8 .tg{font-family:'Space Grotesk';font-weight:400;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#9C93B0}
+  footer{border-top:1px solid rgba(255,255,255,.08);margin-top:44px;padding:30px 0 60px;color:#938CA6;font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  footer .g2{font-family:'Space Grotesk';font-weight:600;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">CloutHook · Logo Concepts</div>
+  <h1>8 directions · brand colors</h1>
+  <p class="sub">Wordmark and mark options in the new brand palette (crimson → violet + teal glow), crisp vector so they scale to the app header, favicon, and avatars. Pick a direction (or mix — "the monogram from 3 + the wordmark from 1") and I'll finalize it: outlined SVG, light + dark versions, favicon, and the app-icon.</p>
+  <div class="grid" id="grid"></div>
+  <footer><span>CloutHook — logo concepts · v1</span><span class="g2">clouthook.com</span></footer>
+</div>
+
+<script>
+const BLOOM = (id)=>`<svg class="bloom" viewBox="0 0 32 32" aria-hidden="true"><defs>
+  <radialGradient id="bg${id}" cx="42%" cy="38%" r="65%"><stop offset="0%" stop-color="#FFC2D2"/><stop offset="48%" stop-color="#E23A5E"/><stop offset="100%" stop-color="#9B5BE0"/></radialGradient>
+  <filter id="bgl${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="1.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <g transform="translate(16,16)" filter="url(#bgl${id})">
+  ${Array.from({length:6}).map((_,k)=>`<g transform="rotate(${k*60})"><ellipse cx="0" cy="-7" rx="3.1" ry="7" fill="url(#bg${id})"/></g>`).join('')}
+  <circle r="2.2" fill="#FFE9C0"/></g></svg>`;
+const BADGE = `<svg class="badge" viewBox="0 0 64 64" aria-hidden="true"><defs>
+  <linearGradient id="bd" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF5A7A"/><stop offset="100%" stop-color="#9B5BE0"/></linearGradient>
+  <filter id="bdg" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="#0A0810" stroke="url(#bd)" stroke-width="2"/>
+  <text x="32" y="43" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="30" fill="url(#bd)" filter="url(#bdg)">CH</text></svg>`;
+
+const C=[
+ {lab:'01 · Gradient wordmark',desc:'Clean modern sans, crimson→violet gradient. The safe premium default.',html:`<div class="logo"><div class="l1 grad">CloutHook</div></div>`},
+ {lab:'02 · Two-tone',desc:'“Clout” white, “Hook” in the gradient — plays the name split.',html:`<div class="logo"><div class="l2"><span class="w">Clout</span><span class="grad">Hook</span></div></div>`},
+ {lab:'03 · Monogram + wordmark',desc:'A CH badge (works as favicon / app icon) beside the wordmark.',html:`<div class="logo">${BADGE}<div class="l3">Clout<span class="h">Hook</span></div></div>`},
+ {lab:'04 · Bloom accent',desc:'A tiny glowing bloom ties the wordmark to the botanical brand.',html:`<div class="logo"><div class="l4">Clout${BLOOM('a')}Hook</div></div>`},
+ {lab:'05 · Uppercase minimal',desc:'Tracked caps + a thin glowing underline. Premium, editorial.',html:`<div class="logo"><div><div class="l5">CloutHook</div><div class="u"></div></div></div>`},
+ {lab:'06 · Elegant serif',desc:'Fraunces serif in the gradient — romantic, premium, matches the glow world.',html:`<div class="logo"><div class="l6 grad">CloutHook</div></div>`},
+ {lab:'07 · Distinctive (Syne)',desc:'Characterful geometric display — bolder, more ownable.',html:`<div class="logo"><div class="l7 grad">CloutHook</div></div>`},
+ {lab:'08 · Stacked lockup',desc:'Wordmark + tagline, centered — for splash / end-card.',html:`<div class="logo"><div class="l8"><div class="wm grad">CloutHook</div><div class="tg">Hook first · Clout follows</div></div></div>`},
+];
+const grid=document.getElementById('grid');
+C.forEach(c=>{const d=document.createElement('div');d.className='card';d.innerHTML=`<span class="lab">${c.lab}</span>${c.html}<div class="desc">${c.desc}</div>`;grid.appendChild(d);});
+</script>
+</body>
+</html>

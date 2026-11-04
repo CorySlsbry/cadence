@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 120" role="img" aria-label="CloutHook logo">
+  <title>CloutHook horizontal logo</title>
+  <!-- For production, outline the text (font: Space Grotesk 700). Falls back to a geometric sans. -->
+  <g>
+    <path d="M76 24 L76 60 Q76 92 49 92 Q24 92 24 70 Q24 57 37 54"
+          fill="none" stroke="#CCFF00" stroke-width="18"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="150" y="80" font-family="'Space Grotesk','Inter',system-ui,sans-serif"
+        font-size="66" font-weight="700" letter-spacing="-2">
+    <tspan fill="#F4F4F0">clout</tspan><tspan fill="#CCFF00">hook</tspan>
+  </text>
+</svg>

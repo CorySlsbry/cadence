@@ -1,0 +1,15 @@
+# Build the Cadence MCP server image. Source/context = repo ROOT; Dockerfile at mcp/Dockerfile.
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'mcp/Dockerfile'
+      - '-t'
+      - '${_IMAGE}'
+      - '.'
+images:
+  - '${_IMAGE}'
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s
